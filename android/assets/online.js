@@ -38,7 +38,7 @@ function render(){
  $('raise').innerHTML='加注<span>投入 '+(s.base+10)+'</span>';$('raise').disabled=!myTurn||s.base>=100;
  $('open').innerHTML='开牌<span>投入 '+s.base+'</span>';
  $('actionTitle').textContent=s.active?(busy?'正在同步…':myTurn?'轮到你了':'等待好友操作'):!s.joined?'分享房间码，等待好友':s.you===dealer?'由你发牌，对方先手':'等待好友发牌，你将先手';
- $('actionHint').textContent=s.active?'可翻 1 / 2 / 3 张 · 闷牌、看牌、开牌同价':'无底注 · 每局结束归零 · 胜者发牌，对方先手';
+ $('actionHint').textContent=s.active?'可翻 1 / 2 / 3 张 · 闷牌、看牌、开牌同价':'无底注 · 下局发牌清零 · 胜者发牌，对方先手';
  $('deal').innerHTML=(!s.joined?'等待好友加入':s.you!==dealer?'等待好友发牌':s.round?'你赢了，发下一局':'发牌，好友先手')+' <span>↗</span>';
  resetButton.hidden=s.active||!s.joined;const requested=s.resetRequests.includes(s.you),other=s.resetRequests.includes(1-s.you);resetButton.disabled=busy||requested;resetButton.textContent=requested?'已请求重置战绩，等待好友同意':other?'好友请求重置战绩 · 点击同意':'请求双方重置战绩';
  const l=$('log');l.replaceChildren();s.logs.forEach(t=>{const e=document.createElement('div');e.className='log-item';e.textContent=t;l.append(e);});

@@ -6,7 +6,7 @@ export function initial(token){return {rulesVersion:2,players:[token,null],banks
 const log=(s,t)=>{s.logs.unshift(t);s.logs=s.logs.slice(0,35);};
 const name=i=>'玩家'+(i===0?'一':'二');
 function pay(s,i,n){s.banks[i]+=n;s.pot+=n;return n;}
-function finish(s,w,txt){const p=s.pot;s.lastPot=p;s.lastBets=[...s.banks];if(w===null)s.stats[2]++;else{s.stats[w]++;s.dealer=w;}s.active=false;s.winner=w;s.revealed=true;s.pot=0;s.banks=[0,0];s.message=txt+' · 本局投入 '+p+'，积分已归零';log(s,s.message);}
+function finish(s,w,txt){const p=s.pot;s.lastPot=p;s.lastBets=[...s.banks];if(w===null)s.stats[2]++;else{s.stats[w]++;s.dealer=w;}s.active=false;s.winner=w;s.revealed=true;s.message=txt+' · 本局投入 '+p+'，下一局发牌时清零';log(s,s.message);}
 function settle(s,opener,txt){log(s,txt);const c=compare(...s.hands);let w=c>0?0:c<0?1:null;if(w===null&&opener!==null)w=1-opener;finish(s,w,w===null?'同牌力，平局':name(w)+'获胜 · '+evaluate(s.hands[w]).name+(c===0?'（同牌力，开牌方负）':''));}
 export function action(s,i,a){
  if(i!==0&&i!==1)throw Error('无效的玩家身份');
