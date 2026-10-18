@@ -12,9 +12,16 @@ test('look jumps reveal only requested cards; hidden card identities and type st
  for(const n of [1,2,3]){const s=setup();action(s,1,'look'+n);const me=view(s,1,1,'ABCDEF'),other=view(s,0,1,'ABCDEF');assert.equal(me.hands[1].filter(Boolean).length,n);assert.equal(me.types[1]!=="",n===3);assert(other.hands.flat().every(x=>x===null));assert.equal(s.pot,0);assert.equal(s.turn,1);assert.throws(()=>action(s,1,'look'+n));}
  const s=setup();action(s,1,'look');assert.equal(s.looked[1],3);
 });
-test('equal fees for blind, partially seen, fully seen and showdown; tied auto-showdown keeps dealer',()=>{
- for(const n of [0,1,2,3]){const s=setup();if(n)action(s,1,'look'+n);action(s,1,'follow');assert.equal(s.pot,10);action(s,0,'follow');action(s,1,'open');assert.equal(s.lastPot,30);assert.deepEqual(s.banks,[10,20]);assert.equal(s.pot,30);}
- const s=setup();s.hands=[[{rank:14,suit:'♠'},{rank:12,suit:'♥'},{rank:8,suit:'♣'}],[{rank:14,suit:'♥'},{rank:12,suit:'♣'},{rank:8,suit:'♦'}]];while(s.active)action(s,s.turn,'follow');assert.equal(s.winner,null);assert.equal(s.dealer,0);assert.equal(s.stats[2],1);
+test('seen costs exactly twice blind; open costs one call; partial look counts as seen',()=>{
+ for(const n of [0,1,2,3]){
+  const s=setup();if(n)action(s,1,'look'+n);const fee=n?20:10;const v=view(s,1,1,'ABCDEF');assert.equal(v.callCost,fee);assert.equal(v.openCost,fee);assert.equal(v.raiseCost,n?40:20);
+  action(s,1,'follow');assert.equal(s.pot,fee);assert.equal(s.base,10);assert.equal(view(s,0,2,'ABCDEF').callCost,10);action(s,0,'follow');assert.equal(s.pot,fee+10);
+  action(s,1,'open');assert.equal(s.pot,fee*2+10);assert.deepEqual(s.banks,[10,fee*2]);assert.equal(s.lastPot,s.pot);
+ }
+ const s=setup();action(s,1,'look1');action(s,1,'raise');assert.equal(s.base,20);assert.equal(s.banks[1],40);assert.equal(view(s,0,0,'ABCDEF').callCost,20);action(s,0,'follow');assert.deepEqual(s.banks,[20,40]);
+});
+test('tied automatic showdown keeps dealer and settlement until next deal',()=>{
+ const s=setup();s.hands=[[{rank:14,suit:'♠'},{rank:12,suit:'♥'},{rank:8,suit:'♣'}],[{rank:14,suit:'♥'},{rank:12,suit:'♣'},{rank:8,suit:'♦'}]];while(s.active)action(s,s.turn,'follow');assert.equal(s.winner,null);assert.equal(s.dealer,0);assert.equal(s.stats[2],1);assert.equal(s.pot,200);action(s,0,'deal');assert.equal(s.pot,0);
 });
 test('1000 rounds: retained settlement, next-deal reset, dealer transition, unique cards and amount conservation',()=>{
  const s=setup();let finished=0;
