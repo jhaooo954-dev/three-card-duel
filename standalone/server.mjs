@@ -18,7 +18,7 @@ export function createApp({dataDir=process.env.DATA_DIR||path.join(root,'data'),
  const cleanup=db.prepare('DELETE FROM rooms WHERE updated_at<?');
  const creationRates=new Map();let lastCleanup=0;
  function json(res,data,status=200){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(data));}
- function load(code){if(!validCode(code))throw Error('请输入正确的 6 位房间码');const row=select.get(code,Date.now()-86400000);if(!row)throw Error('房间不存在或已过期');return {s:JSON.parse(row.state),revision:row.revision};}
+ function load(code){if(!validCode(code))throw Error('请输入正确的 6 位房间码');const row=select.get(code,Date.now()-86400000);if(!row)throw Error('房间不存在或已过期');const s=JSON.parse(row.state);if(s.rulesVersion!==2)throw Error('玩法已更新，请刷新页面并创建新房间');return {s,revision:row.revision};}
  const server=http.createServer(async(req,res)=>{
   try{
    const url=new URL(req.url,'http://localhost');
@@ -51,7 +51,7 @@ export function createApp({dataDir=process.env.DATA_DIR||path.join(root,'data'),
    if(b.type==='join'){
     if(i>=0){json(res,{state:view(s,i,revision,code)});return;}
     if(s.players[1]){json(res,{error:'房间已满，只能容纳两人'},409);return;}
-    issued=crypto.randomUUID();s.players[1]=issued;i=1;s.message='好友已加入，等待房主发牌';s.logs.unshift(s.message);
+    issued=crypto.randomUUID();s.players[1]=issued;i=1;s.message='好友已加入，第一局由房主发牌，对方先手';s.logs.unshift(s.message);
    }else if(b.type==='action'){
     if(i<0){json(res,{error:'无效的玩家身份'},403);return;}
     if(b.revision!==revision){json(res,{error:'牌局已更新，请再操作一次'},409);return;}

@@ -8,7 +8,11 @@
 - 服务器发牌、比较牌型、结算；未看牌时不向手机发送自己的牌面，始终不提前发送对方牌面。
 - 独立玩家身份、换设备需要重新建房；同一设备可刷新恢复，换房后可用房间码重新加入。
 - 重复操作用版本号校验；SQLite 保存房间，每次下注后写入。房间 24 小时过期。
-- 重置积分需双方同意，虚拟积分不关联现金。
+- v1.1：无底注；本局投入从 0 开始，结算后双方投入和底池归零。
+- 闷牌、看牌后跟注、开牌均按当前底分计费；初始底分 10，加注每次提高 10，上限 100。
+- 可翻 1 / 2 / 3 张；只给本人发送已翻牌面，未全翻不发送牌型。弃牌、开牌、自动比牌后双方亮出全部三张。
+- 第一局房主发牌，此后上局赢家发牌；发牌方的对手先操作，自动平局沿用原发牌方。
+- 双方可同意重置战绩，积分不关联现金。
 
 ## 运行
 
@@ -24,13 +28,16 @@ npm start
 
 ## Render 配置
 
-仓库根目录包含 `render.yaml`。连接代码仓库后通过 Blueprint 创建服务。也可手动选择：
+线上使用单个 Render Web Service，配置如下：
 
 - Web Service，Node，根目录 `standalone`
-- Build Command: `node --check server.mjs`
+- Build Command: `node --check server.mjs && npm test`
 - Start Command: `npm start`
 - Node 版本 24，Health Check `/healthz`
-- 明确选择 Free 计划；不要默认创建付费资源
+- 已部署为 Free 计划，不附加付费存储
+- 当前地址：https://three-card-duel-jh.onrender.com
+
+现有服务以仓库根目录运行，构建和启动命令均以 `cd standalone &&` 开头。安卓客户端源码在 `android/`，签名密钥不存入 Git。
 
 `DATA_DIR=/tmp/three-card-data` 不依赖额外付费存储。免费服务可能休眠，首次唤醒会等待；实例重启、重新部署或平台回收本地磁盘后，房间会丢失，请重新建房。游戏过程中保持网页前台。
 
