@@ -1,7 +1,9 @@
-# 双人大话骰 v1.1 · 自由喊骰
-两人各5颗骰子，6位房间码异地联机。双方准备后同步摇骰，立体骰子和骰盅摇动动画；点自己的骰盅可以私下偷看、盖回。口头叫数，不在App中输入。摇骰结束后任意一方都能点“双方开盅”，公开双方骰子。无回合限制、无叫数限制、无积分和自动判输赢；双方点数保留到两人准备下一盅。点数统计按原始1～6点展示，万能点及特殊规则由玩家口头约定。
-服务 https://dice-duel-jh.onrender.com 。现有安卓App加载线上界面，关闭重开即可获取此版本，无需重装。首次安装 APK /download.apk ，ZIP /download.zip 。
-Node 24，无第三方运行时依赖。测试 node --test test.cjs ；运行 node server.cjs 。
-只有本人的点数在开盅前发送给本人；开盅后才同时公开。服务器随机摇骰，摇动期间不能开盅或偷看，正在对局时不能重新摇骰。动作携带当前局号、版本和去重编号，防止迟到操作误开下一局。客户端处理同时准备/同时开盅引起的版本冲突。
-服务器内存保存房间，闲置12小时清理。服务器重启或部署后需重新建房。
-安卓原生壳最低安卓8，依赖系统WebView，无Google服务依赖。此轮只更新线上游戏，不修改原生壳。构建复用已签名APK并校验SHA-256，保证首次版本下载一致性。
+# 双人十点半 v1.0
+Android APK + server, independent package com.jh.tenhalf. Node 24, no runtime third-party dependencies.
+https://ten-half-duel-jh.onrender.com ; /download.apk ; /download.zip .
+Run node --test test.cjs ; node server.cjs . Docker builds the signed APK, verifies it, creates ZIP, runs engine/API/UI tests and serves both game and downloads.
+Rules: 52 cards, A=1, 2–10 face value, J/Q/K=0.5. Threshold 10.5. First dealer is host, alternate after every completed round regardless of winner.
+Dealer starts the round, each player receives one private hole card. Every later card is public; only the owner sees the hole card and full hand total before settlement. Guest requests one card and dealer explicitly deals it. Guest can stop; banker then draws or stands. Guest bust ends round immediately. Guest exact10.5 or five non-bust cards ends guest turn and banker plays.
+Banker bust loses. Banker exact10.5 or five non-bust cards wins with priority, including versus guest specials, per requested custom rule. Otherwise guest special wins, else compare points; equal points banker wins.
+Base10; winner normal x1, exact10.5 x2, five non-bust x3. Five-card exact10.5 is x3 and multipliers do not compound. Totals computed using integer half-point units to avoid floating point errors. Scores are zero-sum, cumulative and retained after settlement. No money value.
+Server shuffles a fresh deck every round with crypto.randomInt Fisher-Yates. State is in memory with 12h idle expiry; restarts and deploys clear rooms. Requests carry round+revision+id for authorization, stale protection and deduplication. Future client rebuilds require a persistent signing key to support in-place upgrades; do not silently regenerate keys for releases.
