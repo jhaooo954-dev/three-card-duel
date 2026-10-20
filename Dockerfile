@@ -1,21 +1,13 @@
-FROM eclipse-temurin:17-jdk-jammy AS android
-RUN apt-get update && apt-get install -y --no-install-recommends curl unzip zip && rm -rf /var/lib/apt/lists/*
-RUN mkdir -p /opt/android/cmdline-tools && curl -fSL --retry 3 https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o /tmp/sdk.zip && unzip -q /tmp/sdk.zip -d /tmp/sdk && mv /tmp/sdk/cmdline-tools /opt/android/cmdline-tools/latest && rm /tmp/sdk.zip
-RUN yes | /opt/android/cmdline-tools/latest/bin/sdkmanager --sdk_root=/opt/android --licenses >/dev/null
-RUN /opt/android/cmdline-tools/latest/bin/sdkmanager --sdk_root=/opt/android "platforms;android-34" "build-tools;34.0.0"
-WORKDIR /src
-COPY android ./android
-RUN sh android/build.sh
 FROM node:24-bookworm-slim AS tested
 WORKDIR /app
-COPY engine.cjs server.cjs test.cjs ./
+COPY engine.cjs server.cjs test.cjs preserve-apk.cjs ./
 COPY public ./public
 RUN node --check public/app.js && node --test test.cjs
+RUN node preserve-apk.cjs
 FROM node:24-bookworm-slim
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=tested /app ./
-COPY --from=android /src/public/TenHalf-v1.0.apk /src/public/TenHalf-v1.0.zip ./public/
 USER node
 EXPOSE 10000
 CMD ["node","server.cjs"]
