@@ -8,16 +8,16 @@ COPY hub-android ./hub-android
 RUN sh hub-android/build.sh
 FROM node:24-bookworm-slim AS tested
 WORKDIR /app
-COPY engine.cjs server.cjs test.cjs hub-test.cjs preserve-apk.cjs check-games.cjs ./
+COPY engine.cjs server.cjs club-server.cjs test.cjs club-test.cjs hub-test.cjs preserve-apk.cjs ./
+COPY club-engines ./club-engines
 COPY public ./public
-RUN node --check public/app.js && node --test test.cjs hub-test.cjs
+RUN node --check public/club/app.js && node --test test.cjs club-test.cjs hub-test.cjs
 RUN node preserve-apk.cjs
-RUN node check-games.cjs
 FROM node:24-bookworm-slim
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=tested /app ./
-COPY --from=android /src/public/FriendsClub-v1.0.apk /src/public/FriendsClub-v1.0.zip ./public/
+COPY --from=android /src/public/FriendsClub-v2.0.apk /src/public/FriendsClub-v2.0.zip ./public/
 USER node
 EXPOSE 10000
 CMD ["node","server.cjs"]

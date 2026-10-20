@@ -13,9 +13,9 @@ jar cf /tmp/club-build/classes.jar -C /tmp/club-build/classes .
 zip -j /tmp/club-build/unsigned.apk /tmp/club-build/dex/classes.dex
 "$BT/zipalign" -f 4 /tmp/club-build/unsigned.apk /tmp/club-build/aligned.apk
 keytool -genkeypair -noprompt -keystore /tmp/club-build/signing.jks -storepass android -keypass android -alias friendsclub -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Friends Games Club, O=Personal Games, C=CN"
-"$BT/apksigner" sign --ks /tmp/club-build/signing.jks --ks-pass pass:android --key-pass pass:android --out public/FriendsClub-v1.0.apk /tmp/club-build/aligned.apk
-"$BT/apksigner" verify --verbose public/FriendsClub-v1.0.apk
-"$BT/aapt" dump badging public/FriendsClub-v1.0.apk
+"$BT/apksigner" sign --ks /tmp/club-build/signing.jks --ks-pass pass:android --key-pass pass:android --out public/FriendsClub-v2.0.apk /tmp/club-build/aligned.apk
+"$BT/apksigner" verify --verbose public/FriendsClub-v2.0.apk
+"$BT/aapt" dump badging public/FriendsClub-v2.0.apk
 cd public
-zip FriendsClub-v1.0.zip FriendsClub-v1.0.apk
-sha256sum FriendsClub-v1.0.apk FriendsClub-v1.0.zip
+zip FriendsClub-v2.0.zip FriendsClub-v2.0.apk
+sha256sum FriendsClub-v2.0.apk FriendsClub-v2.0.zip
