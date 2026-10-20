@@ -1,0 +1,9 @@
+.git
+.env
+.env.*
+node_modules
+*.log
+*.jks
+*.keystore
+public/*.apk
+public/*.zip

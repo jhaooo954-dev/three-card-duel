@@ -1,9 +1,8 @@
-# 三张 · 双人对战 v1.2
-
-在线游戏：https://three-card-duel-jh.onrender.com
-
-`standalone/` 是无外部依赖的 Node 24 双人服务器，`android/` 是安卓客户端。
-
-无底注、下局发牌时积分归零、看牌按闷牌双倍、开牌不额外翻倍、分 1/2/3 张看牌、结束双方亮牌、上局赢家发牌且对方先手。
-
-服务器验证：`cd standalone && npm test`。更多运行与部署说明见 `standalone/README.md`。
+# 双人大话骰 v1.0
+两位玩家各5颗骰子，六位房间码异地联机；默认1点万能，叫过1点后本局取消万能。叫数按数量优先、点数次之提高。开盅数量足够则叫数方赢，否则开盅方赢。首局房主先叫，之后输家先叫。无顺子、豹子特殊规则。
+结算双方亮骰，赢家+10、输家-10，保留本局结果到双方准备下一局。积分累计，纯休闲无现金价值。
+Node 24，无第三方依赖。运行 node --test test.cjs；node server.cjs。
+Docker多阶段构建原生Android WebView APK和ZIP。安卓8以上，需可用系统WebView，不依赖Google服务。安装包名com.jh.diceduel，与炸金花独立。
+服务 https://dice-duel-jh.onrender.com ，APK /download.apk ，压缩包 /download.zip。
+服务器内存保存房间，闲置12小时清理，服务器重启房间丢失。前后台恢复自动重新读取牌局。对方手骰由服务端脱敏，开盅前不发送。动作携带版本和去重编号，避免重复结算。
+APK签名在Docker构建阶段生成，私钥不进源码或最终镜像。修改客户端重建前须规划持久签名密钥；不同签名的包升级需卸载旧版。
