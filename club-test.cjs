@@ -25,3 +25,31 @@ for(const g of ['card','dice','tenhalf']){await vm.runInContext("select('"+g+"')
 await vm.runInContext('select(null)',context);assert.equal(els.get('lobby').hidden,false);assert.equal(els.get('entry').hidden,true);assert.equal(els.get('game-frame').src,'about:blank');assert.equal(creates,1);await api('/club-api/leave',{code:session.code},session.token);
 }));
 test('trusted game frames allow same-origin embedding, assets and central auth, with no second visible room form',async()=>fixture(async(_api,base)=>{const main=await fetch(base+'/club/');assert.equal(main.status,200);assert.match(main.headers.get('content-security-policy'),/frame-src 'self'/);for(const g of ['card','dice','tenhalf']){const frame=await fetch(base+'/club-game/'+g+'/');assert.equal(frame.status,200);assert.match(frame.headers.get('content-security-policy'),/frame-ancestors 'self'/);const js=await(await fetch(base+'/club-game/'+g+'/app.js')).text();assert.ok(js.includes('club-session'));assert.ok(js.includes('/club-api/game/'+g+'/'));const css=await(await fetch(base+'/club-game/'+g+'/style.css')).text();assert.ok(css.includes('display:none!important'));}assert.equal((await fetch(base+'/club-game/../secret')).status,404);}));
+test('both seats see one shared dealer event; retries do not redeal or replay; event never contains cards',async()=>fixture(async(api,base)=>{
+ let r=(await api('/club-api/create',{token:A})).v;const code=r.code;r=(await api('/club-api/join',{token:B,code})).v;
+ r=(await api('/club-api/select',{code,id:'dealer-card',rev:r.rev,game:'card'},A)).v;
+ let s=(await api('/club-api/game/card/state?code='+code,null,A)).v;
+ assert.equal(s.dealerEvent,undefined);
+ const body={code,id:'dealer-once',rev:s.revision,epoch:r.epoch,action:'deal'};
+ s=(await api('/club-api/game/card/action',body,A)).v;
+ const other=(await api('/club-api/game/card/state?code='+code,null,B)).v;
+ assert.equal(s.dealerEvent.id,other.dealerEvent.id);assert.equal(s.dealerEvent.shuffle,true);
+ assert.deepEqual(s.dealerEvent.recipients,other.dealerEvent.recipients);
+ assert.deepEqual(Object.keys(s.dealerEvent).sort(),['duration','id','recipients','remaining','shuffle']);
+ assert.deepEqual(s.hands.flat(),Array(6).fill(null));assert.deepEqual(other.hands.flat(),Array(6).fill(null));
+ const retry=(await api('/club-api/game/card/action',body,A)).v;
+ assert.equal(retry.dealerEvent.id,s.dealerEvent.id);assert.equal(retry.round,1);
+ for(const file of ['table-dealer.js','table-dealer.css'])assert.equal((await fetch(base+'/club/'+file)).status,200);
+}));
+test('tenhalf dealer shuffles once per shoe and continues the same deck for draws and next hands',async()=>fixture(async(api)=>{
+ let r=(await api('/club-api/create',{token:A})).v;const code=r.code;r=(await api('/club-api/join',{token:B,code})).v;
+ r=(await api('/club-api/select',{code,id:'dealer-ten',rev:r.rev,game:'tenhalf'},A)).v;
+ let s=(await api('/club-api/game/tenhalf/state?code='+code,null,A)).v,id=0;
+ async function action(t,type){const resp=await api('/club-api/game/tenhalf/action',{code,id:'td-'+(++id),rev:s.rev,epoch:r.epoch,action:{type,round:s.round}},t);assert.equal(resp.status,200,JSON.stringify(resp.v));s=resp.v;}
+ await action(A,'start');assert.equal(s.dealerEvent.shuffle,true);const first=s.dealerEvent.id;
+ await action(B,'request');assert.equal(s.dealerEvent.id,first);
+ await action(A,'deal');assert.equal(s.dealerEvent.shuffle,false);assert.deepEqual(s.dealerEvent.recipients,[1]);assert.equal(s.remaining,49);
+ if(s.phase==='guest')await action(B,'stand');if(s.phase==='dealer')await action(A,'stand');
+ const left=s.remaining,shoe=s.shoe,scores=s.scores.slice();await action(A,'start');
+ assert.equal(s.dealerEvent.shuffle,false);assert.equal(s.shoe,shoe);assert.equal(s.remaining,left-2);assert.deepEqual(s.scores,scores);assert.equal(s.dealer,0);
+}));
