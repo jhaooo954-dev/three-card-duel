@@ -3,7 +3,7 @@ const $=id=>document.getElementById(id);
 let session=null,room=null,busy=false,polling=false,frameKey='',lastOk=0;
 try{session=JSON.parse(localStorage.getItem('club-session')||'null');$('nickname').value=localStorage.getItem('club-name')||'';}catch{}
 const uid=()=>Array.from(crypto.getRandomValues(new Uint8Array(32)),v=>v.toString(16).padStart(2,'0')).join('');
-const names={card:'炸金花',dice:'大话骰',tenhalf:'十点半'};
+const names={card:'炸金花',dice:'大话骰',tenhalf:'十点半',gomoku:'五子棋'};
 function note(s){$('notice').textContent=s||'';}
 function remember(){try{if(session)localStorage.setItem('club-session',JSON.stringify(session));else localStorage.removeItem('club-session');localStorage.setItem('club-name',$('nickname').value.trim());}catch{}}
 async function api(path,body,token){const c=new AbortController(),timer=setTimeout(()=>c.abort(),65000);try{const r=await fetch('/club-api/'+path,{method:body?'POST':'GET',headers:{...(body?{'Content-Type':'application/json'}:{}),...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:c.signal,cache:'no-store'});const data=await r.json();if(!r.ok){const e=Error(data.error||'请求失败');Object.assign(e,{status:r.status,state:data.state,expired:data.expired});throw e;}lastOk=Date.now();return data;}catch(e){if(e.name==='AbortError')throw Error('连接超时，请重试');throw e;}finally{clearTimeout(timer);}}
