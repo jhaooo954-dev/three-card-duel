@@ -24,9 +24,9 @@
   }
   const started=performance.now();
   if(!motion){
-   const counts=event.recipients.reduce((a,i)=>(a[i]++,a),[0,0]),sent=[0,0];
+   const counts=event.recipients.reduce((a,i)=>(a[i]++,a),[0,0,0]),sent=[0,0,0];
    event.recipients.forEach((recipient,j)=>{
-    const el=document.getElementById(recipient===you?'my-cards':'op-cards');
+    const el=document.getElementById(recipient===you?'my-cards':document.querySelector('[data-ten-seat="'+recipient+'"]')?.id||'op-cards');
     const offset=sent[recipient]++;
     const delay=shuffleEnd+j*240-elapsed;
     if(delay < -340)return;
@@ -47,7 +47,7 @@ function roundDealer(){
  function cancel(){cancelAnimationFrame(raf);animations.forEach(a=>a.cancel());animations=[];flights.forEach(n=>n.remove());flights=[];marks.forEach(n=>n.classList.remove('card-in-flight'));marks=[];panel.classList.remove('is-shuffling','is-dealing');}
  function finish(){marks.forEach(n=>n.classList.remove('card-in-flight'));marks=[];panel.classList.remove('is-shuffling','is-dealing');status.textContent='发牌完成 · 请按回合操作';}
  function flyCard(recipient,k,at){
-  const target=document.querySelector('#cards'+(recipient===viewer?0:1))?.children[k];if(!target)return;
+  const target=document.querySelector('[data-seat="'+recipient+'"] .cards')||document.querySelector('#cards'+(recipient===viewer?0:1))?.children[k];if(!target)return;
   const rect=arena.getBoundingClientRect(),shoe=panel.querySelector('.casino-shoe').getBoundingClientRect(),to=target.getBoundingClientRect();
   target.classList.add('card-in-flight');marks.push(target);const n=document.createElement('i');n.className='casino-flight';n.textContent='♠';n.setAttribute('aria-hidden','true');n.style.width=to.width+'px';n.style.height=to.height+'px';arena.append(n);flights.push(n);
   const dx=to.left-rect.left,dy=to.top-rect.top,sx=shoe.left-rect.left,sy=shoe.top-rect.top;
@@ -58,11 +58,11 @@ function roundDealer(){
   if(!e||e.id<=lastId)return;lastId=e.id;cancel();if(e.remaining<=0)return;current=e;viewer=you;eventStart=performance.now()-(e.duration-e.remaining);const sent=new Set(),shuffleEnd=e.shuffle?1000:0;
   if(reduced){status.textContent='荷官发牌完成 · 请按回合操作';return;}
   // Hide only undealt cards. Gameplay buttons remain responsive throughout.
-  for(const id of ['cards0','cards1'])for(const n of document.getElementById(id).children){n.classList.add('card-in-flight');marks.push(n);}
+  for(const id of ['cards0','cards1','cards2'].filter(id=>document.getElementById(id)))for(const n of document.getElementById(id).children){n.classList.add('card-in-flight');marks.push(n);}
   function tick(){const t=performance.now()-eventStart;
    if(t<shuffleEnd){panel.classList.add('is-shuffling');status.textContent='荷官切牌、交错洗牌…';}
-   else{panel.classList.remove('is-shuffling');panel.classList.add('is-dealing');status.textContent='荷官依次向双方发牌…';}
-   const counts=[0,0];e.recipients.forEach((recipient,j)=>{const k=counts[recipient]++,start=shuffleEnd+j*240;if(t>=start&&!sent.has(j)){sent.add(j);if(t-start<360)flyCard(recipient,k,t-start);else document.getElementById('cards'+(recipient===you?0:1)).children[k]?.classList.remove('card-in-flight');}});
+   else{panel.classList.remove('is-shuffling');panel.classList.add('is-dealing');status.textContent='荷官依次向全员发牌…';}
+   const counts=[0,0,0];e.recipients.forEach((recipient,j)=>{const k=counts[recipient]++,start=shuffleEnd+j*240;if(t>=start&&!sent.has(j)){sent.add(j);if(t-start<360)flyCard(recipient,k,t-start);else (document.querySelector('[data-seat="'+recipient+'"] .cards')||document.getElementById('cards'+(recipient===you?0:1)))?.children[k]?.classList.remove('card-in-flight');}});
    if(t<e.duration)raf=requestAnimationFrame(tick);else finish();
   }
   // accept() renders cards immediately after update; begin on the next paint.

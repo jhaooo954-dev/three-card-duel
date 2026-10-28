@@ -90,3 +90,79 @@ test('gomoku finds vertical and both diagonal wins at edges and handles a full-b
  for(const [dr,dc,r,c]of [[1,0,0,14],[1,1,0,0],[1,-1,0,14],[0,1,14,0]]){const s=g.initial([A,B],['甲','乙']);g.act(s,0,{type:'start',round:0});for(let j=0;j<4;j++)s.board[(r+j*dr)*15+c+j*dc]=0;g.act(s,0,{type:'move',round:1,row:r+4*dr,col:c+4*dc});assert.equal(s.winner,0);assert.equal(s.winningLine.length,5);}
  const s=g.initial([A,B],['甲','乙']);g.act(s,0,{type:'start',round:0});s.board.fill(1);s.board[0]=null;s.moves=224;g.act(s,0,{type:'move',row:0,col:0,round:1});assert.equal(s.phase,'ended');assert.equal(s.winner,null);assert.equal(s.nextStarter,0);
 });
+
+test('room modes preserve both identities when expanding or shrinking before play; three seats require all three and reject a fourth',async()=>fixture(async api=>{
+ let r=(await api('/club-api/create',{token:A,name:'甲'})).v;const code=r.code;r=(await api('/club-api/join',{token:B,code,name:'乙'})).v;
+ assert.equal(r.playerCount,2);assert.equal(r.joined,true);
+ assert.equal((await api('/club-api/mode',{code,rev:r.rev,playerCount:3},B)).status,403);
+ r=(await api('/club-api/mode',{code,rev:r.rev,playerCount:3},A)).v;assert.equal(r.playerCount,3);assert.equal(r.memberCount,2);assert.equal(r.joined,false);assert.deepEqual(r.names,['甲','乙','好友二']);
+ assert.equal((await api('/club-api/select',{code,rev:r.rev,id:'not-full',game:'card'},A)).status,400);
+ r=(await api('/club-api/mode',{code,rev:r.rev,playerCount:2},A)).v;assert.equal(r.joined,true);assert.equal((await api('/club-api/state?code='+code,null,B)).v.you,1);
+ r=(await api('/club-api/mode',{code,rev:r.rev,playerCount:3},A)).v;r=(await api('/club-api/join',{token:C,code,name:'丙'})).v;assert.equal(r.you,2);assert.equal(r.joined,true);
+ assert.equal((await api('/club-api/mode',{code,rev:r.rev,playerCount:2},A)).status,400);
+ assert.equal((await api('/club-api/join',{token:'1'.repeat(64),code})).status,409);
+ for(const game of ['card','dice','tenhalf','gomoku']){r=(await api('/club-api/select',{code,rev:r.rev,id:'three-'+game,game},C)).v;for(const [i,token]of [A,B,C].entries()){const v=(await api('/club-api/game/'+game+'/state?code='+code,null,token)).v;assert.equal(v.you,i);assert.deepEqual(v.names,['甲','乙','丙']);}}
+ const s=(await api('/club-api/game/gomoku/state?code='+code,null,C)).v;assert.equal((await api('/club-api/game/gomoku/action',{code,rev:s.rev,epoch:r.epoch,id:'spectator-start',action:{type:'start',round:0}},C)).status,400);
+}));
+
+test('three-card turn order, privacy for third seat, folded seat skipping, winner first, no ante and retained pot',async()=>fixture(async api=>{
+ let r=(await api('/club-api/create',{token:A,playerCount:3})).v;const code=r.code;r=(await api('/club-api/join',{token:B,code})).v;r=(await api('/club-api/join',{token:C,code})).v;r=(await api('/club-api/select',{code,id:'3c',rev:r.rev,game:'card'},A)).v;let s=(await api('/club-api/game/card/state?code='+code,null,A)).v,id=0;
+ async function act(token,action){const body={code,epoch:r.epoch,rev:s.revision,id:'3card-'+(++id),action};const v=await api('/club-api/game/card/action',body,token);assert.equal(v.status,200,JSON.stringify(v.v));s=v.v;return body;}
+ await act(A,'deal');assert.equal(s.pot,0);assert.equal(s.hands.length,3);assert.equal(s.turn,1);assert.ok(s.hands.flat().every(c=>c===null));assert.deepEqual(s.dealerEvent.recipients,[0,1,2,0,1,2,0,1,2]);
+ await act(B,'follow');assert.equal(s.turn,2);assert.equal(s.pot,10);await act(C,'look2');assert.equal(s.callCost,20);assert.equal(s.hands[2].filter(Boolean).length,2);assert.ok(s.hands[0].every(c=>c===null));
+ const a=(await api('/club-api/game/card/state?code='+code,null,A)).v;assert.ok(a.hands[2].every(c=>c===null));assert.ok(!JSON.stringify(a).includes(C));
+ await act(C,'follow');assert.equal(s.pot,30);await act(A,'fold');assert.equal(s.active,true);assert.equal(s.turn,1);assert.equal(s.folded[0],true);const body=await act(B,'fold');assert.equal(s.active,false);assert.equal(s.winner,2);assert.equal(s.dealer,2);assert.equal(s.pot,30);assert.deepEqual(s.banks,[0,10,20]);assert.ok(s.hands.flat().every(Boolean));assert.equal(new Set(s.hands.flat().map(c=>c.suit+c.rank)).size,9);
+ assert.equal((await api('/club-api/game/card/action',body,B)).v.pot,30);await act(C,'deal');assert.equal(s.turn,0);assert.equal(s.pot,0);assert.deepEqual(s.banks,[0,0,0]);
+ r=(await api('/club-api/state?code='+code,null,A)).v;r=(await api('/club-api/select',{code,rev:r.rev,id:'lobby3',game:null},A)).v;assert.equal((await api('/club-api/mode',{code,rev:r.rev,playerCount:2},A)).status,400);
+}));
+
+test('three-card ties retain active opener-loses rule and reset requires every seat',()=>{
+ const c=require('./club-engines/card.cjs'),s=c.initial(A,3);s.players=[A,B,C];c.action(s,0,'deal');const h=[{rank:14,suit:'♠'},{rank:13,suit:'♥'},{rank:11,suit:'♣'}];s.hands=[h.map(v=>({...v})),h.map(v=>({...v})),[{rank:9,suit:'♠'},{rank:7,suit:'♥'},{rank:2,suit:'♣'}]];s.turn=1;c.action(s,1,'open');assert.equal(s.winner,0);assert.equal(s.pot,10);assert.deepEqual(s.stats,[1,0,0,0]);c.action(s,0,'reset');c.action(s,1,'reset');assert.equal(s.round,1);c.action(s,2,'reset');assert.equal(s.round,0);assert.equal(s.hands.length,3);assert.deepEqual(s.stats,[0,0,0,0]);
+});
+
+test('three dice require all ready, independently hide hands, allow any seat to open and retain dice until all ready again',()=>{
+ const d=require('./club-engines/dice.cjs'),s=d.initial([A,B,C],['甲','乙','丙']);let n=0;const roll=()=>Array(5).fill(++n);
+ d.act(s,0,{type:'ready',round:0},roll,0);d.act(s,1,{type:'ready',round:0},roll,0);assert.equal(s.round,0);d.act(s,2,{type:'ready',round:0},roll,0);assert.equal(s.round,1);assert.equal(n,3);
+ for(let i=0;i<3;i++){const v=d.view(s,i,'123456',null,2000);assert.ok(v.dice[i].every(Boolean));assert.ok(v.dice.filter((_,j)=>i!==j).flat().every(x=>x===null));}
+ assert.throws(()=>d.act(s,2,{type:'open',round:1},roll,100));d.act(s,2,{type:'open',round:1},roll,2000);assert.ok(d.view(s,0,'123456',null,2000).dice.flat().every(Number.isInteger));
+ const old=JSON.stringify(s.dice);d.act(s,2,{type:'ready',round:1},roll,2000);d.act(s,0,{type:'ready',round:1},roll,2000);assert.equal(JSON.stringify(s.dice),old);assert.equal(s.phase,'ended');d.act(s,1,{type:'ready',round:1},roll,2000);assert.equal(s.round,2);
+});
+
+test('three tenhalf keeps explicit request/deal, private holes, sequential guests and separate zero-sum settlements',async()=>fixture(async api=>{
+ let r=(await api('/club-api/create',{token:A,playerCount:3})).v;const code=r.code;r=(await api('/club-api/join',{token:B,code})).v;r=(await api('/club-api/join',{token:C,code})).v;r=(await api('/club-api/select',{code,id:'3t',rev:r.rev,game:'tenhalf'},A)).v;let s=(await api('/club-api/game/tenhalf/state?code='+code,null,A)).v,id=0;
+ async function send(token,type){return api('/club-api/game/tenhalf/action',{code,id:'3t-'+(++id),rev:s.rev,epoch:r.epoch,action:{type,round:s.round}},token);}
+ async function act(token,type){const v=await send(token,type);assert.equal(v.status,200,JSON.stringify(v.v));s=v.v;}
+ await act(A,'start');assert.equal(s.remaining,49);assert.equal(s.guest,1);assert.deepEqual(s.hands.map(h=>h[0]===null),[false,true,true]);assert.equal((await send(C,'request')).status,400);assert.equal((await send(A,'draw')).status,400);
+ await act(B,'request');assert.equal(s.remaining,49);assert.equal((await send(B,'stand')).status,400);await act(A,'deal');assert.equal(s.remaining,48);assert.deepEqual(s.dealerEvent.recipients,[1]);assert.equal(s.dealerEvent.shuffle,false);
+ if(s.guest===1)await act(B,'stand');assert.equal(s.guest,2);const third=(await api('/club-api/game/tenhalf/state?code='+code,null,C)).v;assert.notEqual(third.hands[2][0],null);assert.equal(third.hands[0][0],null);await act(C,'stand');assert.equal(s.phase,'dealer');assert.notEqual(s.hands[0][0],null);await act(A,'stand');assert.equal(s.phase,'ended');assert.equal(s.result.outcomes.length,2);assert.equal(s.result.delta.reduce((a,b)=>a+b),0);assert.equal(s.scores.reduce((a,b)=>a+b),0);assert.ok(s.hands.flat().every(Number.isInteger));const remain=s.remaining,scores=s.scores.slice();await act(A,'start');assert.equal(s.remaining,remain-3);assert.equal(s.dealer,0);assert.deepEqual(s.scores,scores);assert.equal(s.dealerEvent.shuffle,false);
+}));
+
+test('three tenhalf uses original banker priority and all payout multipliers against each guest',()=>{
+ const t=require('./club-engines/tenhalf3.cjs'),old=require('./engine.cjs');
+ const hands=[[0],[8],[9],[0,9,10],[0,10,11,12,23],[9,22],[8,9],[0,1,2,3,10]];
+ for(const dh of hands)for(const gh of hands){const s=t.initial([A,B,C],['甲','乙','丙']);s.hands=[dh,gh,[1]];const actual=t.versus(s,1);if(old.total(gh)>21){assert.equal(actual.winner,0);assert.equal(actual.multiplier,1);continue;}
+ const ref=old.initial([A,B],['甲','乙']);Object.assign(ref,{hands:[dh,gh],phase:'dealer',round:1,deck:Array(10).fill(0)});old.act(ref,0,{type:'stand',round:1},()=>[]);assert.equal(actual.winner,ref.result.winner);assert.equal(actual.multiplier,ref.result.multiplier);}
+});
+
+test('three tenhalf continuous 52-card shoes rotate banker through all seats, never refill mid-hand and clear only at shoe end',()=>{
+ const t=require('./club-engines/tenhalf3.cjs'),s=t.initial([A,B,C],['甲','乙','丙']);let shuffles=0,previousDealer=0,seen=new Set(),shoe=0;const deck=()=>{shuffles++;return Array.from({length:52},(_,i)=>i);};
+ for(let k=0;k<300;k++){const d=t.nextDealer(s);t.act(s,d,{type:'start',round:s.round},deck);if(s.shoe!==shoe){if(shoe)assert.equal(d,(previousDealer+1)%3);previousDealer=d;shoe=s.shoe;seen=new Set();assert.deepEqual(s.scores,[0,0,0]);}else assert.equal(d,previousDealer);
+ for(const h of s.hands){assert.equal(seen.has(h[0]),false);seen.add(h[0]);}
+ while(s.phase==='guest')t.act(s,s.guest,{type:'stand',round:s.round},deck);if(s.phase==='dealer')t.act(s,s.dealer,{type:'stand',round:s.round},deck);assert.equal(s.phase,'ended');assert.equal(s.result.delta.reduce((a,b)=>a+b),0);if(t.shoeEnded(s)){assert.ok(s.deck.length<3);assert.deepEqual(s.scores,[0,0,0]);assert.ok(s.result.shoeScores);}}
+ assert.equal(shuffles,Math.ceil(300/17));assert.equal(s.shoe,shuffles);
+});
+
+test('three tenhalf deck exhaustion and guest busts cannot deadlock and pay each guest independently',()=>{
+ const t=require('./club-engines/tenhalf3.cjs'),s=t.initial([A,B,C],['甲','乙','丙']);Object.assign(s,{round:1,shoe:1,phase:'guest',dealer:0,guest:1,hands:[[9],[9],[0]],deck:[9],request:true});t.act(s,0,{type:'deal',round:1},()=>{throw Error('must not shuffle');});assert.equal(s.phase,'ended');assert.equal(s.result.outcomes[0].winner,0);assert.equal(s.result.outcomes[0].multiplier,1);assert.equal(s.result.delta.reduce((a,b)=>a+b),0);assert.deepEqual(s.scores,[0,0,0]);assert.equal(t.nextDealer(s),1);
+ const b=t.initial([A,B,C],['甲','乙','丙']);Object.assign(b,{round:1,phase:'guest',hands:[[0],[9],[9]],deck:[9,9,1,2],request:true});t.act(b,0,{type:'deal',round:1},()=>[]);assert.equal(b.guest,2);assert.equal(b.phase,'guest');t.act(b,2,{type:'request',round:1},()=>[]);t.act(b,0,{type:'deal',round:1},()=>[]);assert.equal(b.phase,'ended');assert.deepEqual(b.result.delta,[20,-10,-10]);
+});
+
+test('three-seat live streams receive third-player actions immediately without leaking private cards or tokens',async()=>fixture(async(api,base)=>{
+ let r=(await api('/club-api/create',{token:A,playerCount:3})).v;const code=r.code;r=(await api('/club-api/join',{token:B,code})).v;r=(await api('/club-api/join',{token:C,code})).v;const aborts=[];
+ async function stream(token){const controller=new AbortController();aborts.push(controller);const response=await fetch(base+'/club-api/events?code='+code,{headers:{Authorization:'Bearer '+token},signal:controller.signal});const reader=response.body.getReader();let buffer='';return async()=>{for(;;){let k=buffer.indexOf('\n\n');if(k<0){const v=await reader.read();assert.equal(v.done,false);buffer+=new TextDecoder().decode(v.value);continue;}const p=buffer.slice(0,k);buffer=buffer.slice(k+2);const line=p.split('\n').find(x=>x.startsWith('data: '));if(line)return JSON.parse(line.slice(6));}};}
+ try{const next=await Promise.all([A,B,C].map(stream));let snapshots=await Promise.all(next.map(f=>f()));assert.deepEqual(snapshots.map(s=>s.room.you),[0,1,2]);
+ r=(await api('/club-api/select',{code,id:'3s-select',rev:r.rev,game:'card'},C)).v;await Promise.all(next.map(f=>f()));let s=(await api('/club-api/game/card/state?code='+code,null,A)).v,id=0;
+ async function act(token,action){const v=await api('/club-api/game/card/action',{code,id:'3s-'+(++id),rev:s.revision,epoch:r.epoch,action},token);assert.equal(v.status,200);s=v.v;return Promise.all(next.map(f=>f()));}
+ await act(A,'deal');await act(B,'follow');snapshots=await act(C,'look3');assert.ok(snapshots[0].state.hands[2].every(c=>c===null));assert.ok(snapshots[1].state.hands[2].every(c=>c===null));assert.ok(snapshots[2].state.hands[2].every(Boolean));for(const snap of snapshots){assert.equal(snap.state.revision,s.revision);for(const token of [A,B,C])assert.ok(!JSON.stringify(snap).includes(token));}
+ }finally{for(const a of aborts)a.abort();}
+}));
