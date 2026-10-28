@@ -53,3 +53,16 @@ test('tenhalf dealer shuffles once per shoe and continues the same deck for draw
  const left=s.remaining,shoe=s.shoe,scores=s.scores.slice();await action(A,'start');
  assert.equal(s.dealerEvent.shuffle,false);assert.equal(s.shoe,shoe);assert.equal(s.remaining,left-2);assert.deepEqual(s.scores,scores);assert.equal(s.dealer,0);
 }));
+test('live stream pushes both seats immediately with private views and rejects outsiders',async()=>fixture(async(api,base)=>{
+ let room=(await api('/club-api/create',{token:A,name:'甲'})).v;const code=room.code;room=(await api('/club-api/join',{token:B,code,name:'乙'})).v;
+ assert.equal((await fetch(base+'/club-api/events?code='+code)).status,401);
+ assert.equal((await fetch(base+'/club-api/events?code='+code,{headers:{Authorization:'Bearer '+C}})).status,403);
+ const readers=[];const aborts=[];
+ async function open(token){const controller=new AbortController();aborts.push(controller);const response=await fetch(base+'/club-api/events?code='+code,{headers:{Authorization:'Bearer '+token},signal:controller.signal});assert.equal(response.status,200);assert.match(response.headers.get('content-type'),/text\/event-stream/);const reader=response.body.getReader();readers.push(reader);let buffer='';return async()=>{for(;;){const k=buffer.indexOf('\n\n');if(k>=0){const packet=buffer.slice(0,k);buffer=buffer.slice(k+2);const line=packet.split('\n').find(x=>x.startsWith('data: '));if(line)return JSON.parse(line.slice(6));}else{const v=await reader.read();assert.equal(v.done,false);buffer+=new TextDecoder().decode(v.value);}}};}
+ try{const nextA=await open(A),nextB=await open(B);assert.equal((await nextA()).room.you,0);assert.equal((await nextB()).room.you,1);
+ room=(await api('/club-api/select',{code,id:'live-card',rev:room.rev,game:'card'},A)).v;assert.equal((await nextA()).game,'card');assert.equal((await nextB()).room.epoch,room.epoch);
+ let s=(await api('/club-api/game/card/state?code='+code,null,A)).v;const send=async(token,action)=>{const started=performance.now();const result=await api('/club-api/game/card/action',{code,id:'live-'+action,rev:s.revision,epoch:room.epoch,action},token);assert.equal(result.status,200);s=result.v;const [a,b]=await Promise.all([nextA(),nextB()]);assert.ok(performance.now()-started<1000,'push must not wait for a polling interval');assert.equal(a.state.revision,s.revision);assert.equal(b.state.revision,s.revision);return [a,b];};
+ await send(A,'deal');let [a,b]=await send(B,'look3');assert.deepEqual(a.state.hands[1],[null,null,null]);assert.ok(b.state.hands[1].every(Boolean));assert.deepEqual(b.state.hands[0],[null,null,null]);assert.ok(!JSON.stringify(a).includes(B));assert.ok(!JSON.stringify(b).includes(A));
+ [a,b]=await send(B,'follow');assert.equal(a.state.banks[1],20);assert.equal(b.state.banks[1],20);
+ }finally{for(const a of aborts)a.abort();for(const r of readers)try{await r.cancel();}catch{}}
+}));
