@@ -1,6 +1,6 @@
 'use strict';
 (()=>{
-const $=id=>document.getElementById(id);let session=null,state=null,busy=false,poll=null,failures=0,sound=false,ctx=null,requestSequence=0,lookExpanded=false;
+const $=id=>document.getElementById(id);let session=null,state=null,busy=false,poll=null,failures=0,sound=false,ctx=null,requestSequence=0,lookExpanded=false,openExpanded=false;
 function seats(s){return [s.you,...s.hands.map((_,i)=>i).filter(i=>i!==s.you)];}
 const money=n=>Number(n).toLocaleString('en-US');
 const resetButton=document.createElement('button');resetButton.className='btn secondary online-reset';resetButton.id='requestReset';resetButton.textContent='请求全员重置战绩';resetButton.hidden=true;document.querySelector('.control-panel').append(resetButton);
@@ -10,12 +10,21 @@ function card(c){const node=document.createElement('div');node.className='card'+
 const lookChoices=document.createElement('div');lookChoices.className='look-choices';lookChoices.id='lookChoices';lookChoices.hidden=true;
 for(let n=1;n<=3;n++){const b=document.createElement('button');b.className='btn secondary';b.id='look'+n;b.textContent='翻 '+n+' 张';b.addEventListener('click',()=>send('look'+n));lookChoices.append(b);}
 $('actions').after(lookChoices);
+const openChoices=document.createElement('div');openChoices.className='look-choices';openChoices.id='openChoices';openChoices.hidden=true;openChoices.setAttribute('aria-label','选择要开牌的一家');lookChoices.after(openChoices);
+function openTargets(s){return s.hands.map((_,i)=>i).filter(i=>i!==s.you&&!s.folded?.[i]);}
+function chooseOpen(){
+ if(busy||!state?.active||state.turn!==state.you)return;
+ const targets=openTargets(state);
+ if(state.targetedOpen&&state.looked[state.you]>0&&targets.length>1){openExpanded=!openExpanded;lookExpanded=false;render();}
+ else send('open');
+}
+
 function render(){
  const s=state,joined=!!session&&!!s;
  $('roomPanel').hidden=joined;$('roomBar').hidden=!joined;
  if(!joined){
   $('name1').textContent='好友';$('name0').textContent='你';$('actions').classList.remove('active');document.querySelector('.control-panel').classList.remove('playing');$('message').textContent='创建房间，邀请朋友来一局';$('deal').disabled=true;$('deal').innerHTML='先创建或加入房间 <span>↗</span>';
-  ['cards0','cards1'].forEach(id=>{const n=$(id);n.replaceChildren();delete n.dataset.signature;for(let k=0;k<3;k++)n.append(card(null));});resetButton.hidden=true;lookChoices.hidden=true;return;
+  ['cards0','cards1'].forEach(id=>{const n=$(id);n.replaceChildren();delete n.dataset.signature;for(let k=0;k<3;k++)n.append(card(null));});resetButton.hidden=true;lookChoices.hidden=true;openChoices.hidden=true;return;
  }
  const order=seats(s);if(s.hands.length===3&&!$('player2')){const extra=$('player1').cloneNode(true);extra.id='player2';for(const el of extra.querySelectorAll('[id]'))el.id=el.id.replace(/1$/,'2');extra.classList.add('third');$('player1').after(extra);}document.body.classList.toggle('three-player',s.hands.length===3);document.title=s.hands.length===3?'三张 · 三人炸金花':'三张 · 双人炸金花';
  const dealer=s.dealer,first=(dealer+1)%s.hands.length,myTurn=s.active&&s.turn===s.you&&!busy,looked=s.looked[s.you];
@@ -38,9 +47,15 @@ function render(){
  for(let n=1;n<=3;n++)$('look'+n).disabled=!myTurn||n<=looked;
  $('follow').innerHTML=(looked?'跟注':'闷牌')+'<span>投入 '+s.callCost+'</span>';
  $('raise').innerHTML='加注<span>投入 '+s.raiseCost+'</span>';$('raise').disabled=!myTurn||s.base>=100;
- $('open').innerHTML='开牌<span>投入 '+s.openCost+'</span>';
+ const canChoose=s.targetedOpen&&looked>0&&openTargets(s).length>1;
+ if(!myTurn||!canChoose)openExpanded=false;
+ $('open').innerHTML=(canChoose?'选择一家开牌':'开牌')+'<span>投入 '+s.openCost+'</span>';
+ $('open').setAttribute('aria-expanded',String(openExpanded));$('open').setAttribute('aria-controls','openChoices');
+ openChoices.hidden=!openExpanded;openChoices.replaceChildren();
+ if(openExpanded)for(const target of openTargets(s)){const b=document.createElement('button');b.className='btn gold';b.textContent='开 '+(s.names?.[target]||'玩家'+(target+1));b.disabled=!myTurn;b.addEventListener('click',()=>send({type:'open',target}));openChoices.append(b);}
+
  $('actionTitle').textContent=s.active?(busy?'正在同步…':myTurn?'轮到你了':'等待好友操作'):!s.joined?'分享房间码，等待好友':s.you===dealer?'请荷官发牌，下家先手':s.you===first?'等好友请荷官发牌，你将先手':'等好友请荷官发牌，按座次行动';
- $('actionHint').textContent=s.active?'可翻 1 / 2 / 3 张 · 看牌按闷牌 2 倍 · 开牌不额外翻倍':'无底注 · 下局发牌清零 · 胜者请荷官开局，下家先手';
+ $('actionHint').textContent=s.active?(s.hands.length===3?'看牌后可选择一家开牌 · 输家退出，其余继续':'可翻 1 / 2 / 3 张 · 看牌按闷牌 2 倍 · 开牌不额外翻倍'):'无底注 · 下局发牌清零 · 胜者请荷官开局，下家先手';
  $('deal').innerHTML=(!s.joined?'等待好友加入':s.you!==dealer?'等好友请荷官发牌':s.round?'请荷官发下一局':'请荷官洗牌、发牌')+' <span>↗</span>';
  resetButton.hidden=s.active||!s.joined;const requested=s.resetRequests.includes(s.you),other=s.resetRequests.some(i=>i!==s.you);resetButton.disabled=busy||requested;resetButton.textContent=requested?'已请求重置战绩，等待好友同意':other?'好友请求重置战绩 · 点击同意':'请求全员重置战绩';
  const l=$('log');l.replaceChildren();s.logs.forEach(t=>{const e=document.createElement('div');e.className='log-item';e.textContent=t;l.append(e);});
@@ -53,9 +68,9 @@ if(window.parent!==window)parent.postMessage({type:'club-live-ready'},location.o
 function accept(s){if(s.rulesVersion!==3)throw Error('玩法已更新，请刷新网页或更新至 v1.2 App');if(!state||s.code!==state.code||s.revision>=state.revision){if(state&&s.revision>state.revision){tone();s.banks.forEach((n,i)=>{if(n>state.banks[i])window.TableDealer?.bet?.(seats(s).indexOf(i),n-state.banks[i]);});if(state.active&&!s.active&&s.winner!==null)window.TableDealer?.collect?.(seats(s).indexOf(s.winner));}state=s;}window.TableDealer?.update(state.dealerEvent,state.you);failures=0;$('connection').textContent=session?.transport==='peer'?'直连对战':'实时同步';render();}
 function beginPoll(){clearTimeout(poll);const tick=async()=>{if(!session)return;if(!busy&&Date.now()-lastLiveUpdate>12000&&document.visibilityState!=='hidden'){const seq=requestSequence;try{const s=await api('GET');if(seq===requestSequence&&session)accept(s);}catch(e){failures++;$('connection').textContent=failures>2?'网络中断 · 重连中':'正在重连…';}}poll=setTimeout(tick,1500);};poll=setTimeout(tick,900);}
 async function enter(type){if(busy)return;const code=$('roomCodeInput').value.trim().toUpperCase();if(type==='join'&&!/^[A-HJ-NP-Z2-9]{6}$/.test(code)){$('roomError').textContent='请输入 6 位房间码（字母和数字）';return;}busy=true;$('createRoom').disabled=true;$('joinRoom').disabled=true;$('roomError').textContent='';const previousSession=session;try{if(type==='join'){const saved=localStorage.getItem('three-card-seat-'+code);if(saved)session={code,token:saved};}const d=await api('POST',{type,code});session={code:d.state.code,token:d.token||session?.token};requestSequence++;state=null;remember();accept(d.state);history.replaceState(null,'',location.pathname+'?room='+session.code);beginPoll();}catch(e){session=previousSession;$('roomError').textContent=e.message;}finally{busy=false;$('createRoom').disabled=false;$('joinRoom').disabled=false;render();}}
-async function send(action){if(busy||!session||!state)return;let errorMessage='';busy=true;requestSequence++;render();const clicked={follow:'闷牌 / 跟注',raise:'加注',open:'开牌',fold:'弃牌',deal:'发牌',reset:'重置战绩'}[action]||'看牌';$('actionTitle').textContent=clicked+'已提交…';document.querySelector('.control-panel').setAttribute('aria-busy','true');try{const d=await api('POST',{type:'action',code:session.code,revision:state.revision,action});accept(d.state);}catch(e){errorMessage=e.message;$('message').textContent=e.message;try{accept(await api('GET'));}catch{}$('actionHint').textContent=e.message;}finally{busy=false;document.querySelector('.control-panel').setAttribute('aria-busy','false');render();if(errorMessage)$('actionHint').textContent=errorMessage;}}
+async function send(action){if(busy||!session||!state)return;let errorMessage='';busy=true;requestSequence++;render();const clicked={follow:'闷牌 / 跟注',raise:'加注',open:'开牌',fold:'弃牌',deal:'发牌',reset:'重置战绩'}[typeof action==='string'?action:action.type]||'看牌';$('actionTitle').textContent=clicked+'已提交…';document.querySelector('.control-panel').setAttribute('aria-busy','true');try{const d=await api('POST',{type:'action',code:session.code,revision:state.revision,action});accept(d.state);}catch(e){errorMessage=e.message;$('message').textContent=e.message;try{accept(await api('GET'));}catch{}$('actionHint').textContent=e.message;}finally{busy=false;document.querySelector('.control-panel').setAttribute('aria-busy','false');render();if(errorMessage)$('actionHint').textContent=errorMessage;}}
 $('createRoom').addEventListener('click',()=>enter('create'));$('joinRoom').addEventListener('click',()=>enter('join'));$('roomCodeInput').addEventListener('keydown',e=>{if(e.key==='Enter')enter('join');});
-['fold','follow','raise','open'].forEach(a=>$(a).addEventListener('click',()=>send(a)));$('look').addEventListener('click',()=>{lookExpanded=!lookExpanded;render();});$('deal').addEventListener('click',()=>send('deal'));resetButton.addEventListener('click',()=>send('reset'));
+['fold','follow','raise'].forEach(a=>$(a).addEventListener('click',()=>send(a)));$('open').addEventListener('click',chooseOpen);$('look').addEventListener('click',()=>{lookExpanded=!lookExpanded;openExpanded=false;render();});$('deal').addEventListener('click',()=>send('deal'));resetButton.addEventListener('click',()=>send('reset'));
 $('shareRoom').addEventListener('click',async()=>{if(session?.transport==='peer'){window.PeerDuel.info();return;}const url=window.Android?'threecard://join?room='+session.code:location.origin+'/?room='+session.code;const data={title:'来玩一局双人炸金花',text:'房间码：'+session.code,url};try{if(navigator.share)await navigator.share(data);else{await navigator.clipboard.writeText('来玩一局三张牌，房间码 '+session.code+'\n'+url);$('shareRoom').textContent='已复制';setTimeout(()=>$('shareRoom').textContent='分享房间',2200);}}catch(e){if(e.name!=='AbortError'){$('actionHint').textContent='房间码 '+session.code+'，可直接发给好友';}}});
 window.addEventListener('peer-connected',e=>{clearTimeout(poll);session={...e.detail,transport:'peer'};state=null;requestSequence++;busy=false;accept(e.detail.state);beginPoll();});window.addEventListener('peer-state',e=>{if(session?.transport==='peer')accept(e.detail);});
 $('leaveRoom').addEventListener('click',()=>{if(!confirm('退出当前房间？此设备会保留身份，可用房间码重新加入。'))return;clearTimeout(poll);requestSequence++;if(session?.transport==='peer')window.PeerDuel.close();session=null;state=null;remember();history.replaceState(null,'',location.pathname);location.reload();});

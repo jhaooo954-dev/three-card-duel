@@ -166,3 +166,30 @@ test('three-seat live streams receive third-player actions immediately without l
  await act(A,'deal');await act(B,'follow');snapshots=await act(C,'look3');assert.ok(snapshots[0].state.hands[2].every(c=>c===null));assert.ok(snapshots[1].state.hands[2].every(c=>c===null));assert.ok(snapshots[2].state.hands[2].every(Boolean));for(const snap of snapshots){assert.equal(snap.state.revision,s.revision);for(const token of [A,B,C])assert.ok(!JSON.stringify(snap).includes(token));}
  }finally{for(const a of aborts)a.abort();}
 }));
+
+test('seen players choose either opponent; only pair loser leaves and hands stay private until final settlement',()=>{
+ const c=require('./club-engines/card.cjs'),hand=r=>[r,r,r].map((rank,i)=>({rank,suit:['♠','♥','♣'][i]}));
+ for(const target of [0,2])for(const wins of [true,false]){
+  const s=c.initial(A,3);s.players=[A,B,C];c.action(s,0,'deal');s.hands=[hand(8),hand(wins?10:3),hand(9)];c.action(s,1,'look1');
+  const before=JSON.stringify(s);assert.throws(()=>c.action(s,1,'open'));assert.equal(JSON.stringify(s),before);
+  for(const invalid of [1,-1,3,'0',null]){assert.throws(()=>c.action(s,1,{type:'open',target:invalid}));assert.equal(JSON.stringify(s),before);}
+  c.action(s,1,{type:'open',target});const loser=wins?target:1;assert.equal(s.folded[loser],true);assert.equal(s.folded.filter(Boolean).length,1);assert.equal(s.active,true);assert.equal(s.revealed,false);assert.equal(s.winner,null);assert.equal(s.pot,20);assert.deepEqual(s.banks,[0,20,0]);assert.equal(s.dealer,0);assert.deepEqual(s.stats,[0,0,0,0]);assert.notEqual(s.turn,loser);
+  for(let i=0;i<3;i++){const v=c.view(s,i,1,'123456');for(let j=0;j<3;j++)if(j!==i)assert.ok(v.hands[j].every(x=>x===null));}
+  const unchanged=JSON.stringify(s);assert.throws(()=>c.action(s,s.turn,{type:'open',target:loser}));assert.equal(JSON.stringify(s),unchanged);
+  c.action(s,s.turn,'open');assert.equal(s.active,false);assert.equal(s.revealed,true);assert.equal(s.stats.reduce((a,b)=>a+b),1);assert.ok(c.view(s,0,2,'123456').hands.flat().every(Boolean));
+  c.action(s,s.dealer,'deal');assert.equal(s.pot,0);assert.ok(s.folded.every(x=>!x));
+ }
+ const s=c.initial(A,3);s.players=[A,B,C];c.action(s,0,'deal');s.hands=[hand(8),hand(8),hand(14)];c.action(s,1,'look3');c.action(s,1,{type:'open',target:0});assert.equal(s.folded[1],true);assert.equal(s.folded[0],false);assert.equal(s.folded[2],false);assert.equal(s.active,true);
+});
+
+test('targeted open passes authenticated API; missing selection rejected and duplicates never charge twice',async()=>fixture(async api=>{
+ let room=(await api('/club-api/create',{token:A,playerCount:3})).v;const code=room.code;await api('/club-api/join',{token:B,code});room=(await api('/club-api/join',{token:C,code})).v;room=(await api('/club-api/select',{code,id:'choose',rev:room.rev,game:'card'},A)).v;
+ let s=(await api('/club-api/game/card/state?code='+code,null,A)).v,n=0;
+ const send=(token,action)=>api('/club-api/game/card/action',{code,id:'target-'+(++n),rev:s.revision,epoch:room.epoch,action},token);
+ s=(await send(A,'deal')).v;s=(await send(B,'look3')).v;
+ assert.equal((await send(B,'open')).status,400);assert.equal((await send(B,{type:'open',target:1})).status,400);
+ const body={code,id:'target-once',rev:s.revision,epoch:room.epoch,action:{type:'open',target:2}};
+ const first=await api('/club-api/game/card/action',body,B);assert.equal(first.status,200);s=first.v;assert.equal(s.active,true);assert.equal(s.pot,20);assert.equal(s.folded.filter(Boolean).length,1);assert.equal(s.folded[0],false);assert.ok(s.hands[0].every(x=>x===null));
+ const duplicate=await api('/club-api/game/card/action',body,B);assert.equal(duplicate.v.pot,20);assert.equal(duplicate.v.revision,s.revision);
+ const third=(await api('/club-api/game/card/state?code='+code,null,A)).v;assert.ok(third.hands.flat().every(x=>x===null));
+}));
