@@ -1,0 +1,11 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#12473e"><title>三人斗地主</title><link rel="stylesheet" href="style.css?v=1"><script src="rules.js?v=1" defer></script><script src="app.js?v=1" defer></script></head><body><main>
+<header><div><span class="eyebrow">好友牌局 · 经典玩法</span><h1>斗地主 <small id="round">等待开局</small></h1></div><button id="rules-open" class="quiet">规则</button></header>
+<div class="deal-bar"><div id="bottom" class="bottom" aria-label="三张底牌"></div><div class="stakes"><span>底分 <b>1</b></span><span>公共倍数 <b id="multiplier">×1</b></span></div></div>
+<div class="opponents"><section id="opponent-left" class="opponent"></section><section id="opponent-right" class="opponent"></section></div>
+<section class="table" aria-live="polite"><div class="table-ring"></div><div class="status"><h2 id="title">正在连接牌桌…</h2><p id="subtitle">三人同房 · 实时对战</p></div><div id="last-cards" class="last-cards"></div><div id="result" hidden></div><p id="event" class="event"></p></section>
+<div id="notice" role="status" aria-live="polite"></div>
+<div id="actions" class="actions"></div>
+<section class="my-zone"><div class="my-meta"><b id="my-name">我的手牌</b><span id="selected-label">点牌选中，再点取消</span><span id="my-score">积分 0</span></div><div id="hand" class="hand" aria-label="我的手牌"></div></section>
+<footer id="footer">两家农民合作 · 任一人出完即获胜</footer>
+</main>
+<dialog id="rules"><div class="rule-title"><h2>经典三人斗地主</h2><button id="rules-close">关闭</button></div><p>一副54张牌，每人17张，留3张底牌。三人依次叫地主；都不叫则重新发牌。叫地主后，未选择过“不叫”的玩家依次可抢一次，叫地主者在被抢后可最后抢一次。每抢一次，公共倍数×2。地主得到底牌并先出牌。</p><p>定地主后，每人选择加倍或不加倍。地主还可选择明牌（公共倍数×2）。支持单张、对子、三张、三带一、三带一对、顺子（至少5张）、连对（至少3对）、飞机及带翅膀、四带二和四带两对。</p><p>牌点从小到大：3至A、2、小王、大王。顺子、连对、飞机的连续部分不含2和王。带单的翅膀可用对子，不能带三张、四张或双王，不能与飞机主体同点；四带二可带一对，不能带双王。四带两对须为两个不同对子。</p><p>除炸弹和王炸外，必须牌型相同、张数相同才能比较，只比主体点数。王炸最大；四张同点是炸弹，四带二不算炸弹。炸弹、王炸各使公共倍数×2。连续两家不出后，由最后出牌者重新领出。</p><p>地主先出完，地主胜；农民任一人出完，两家农民都胜。地主获胜且农民都没出过牌为春天；农民获胜且地主只出过一次牌为反春天，公共倍数再×2。</p><p>每位农民与地主分别结算：底分1 × 公共倍数 × 地主个人加倍 × 该农民个人加倍。地主得失为两位农民的相反合计。这里只使用虚拟积分。回大厅切换游戏会保留本局，重新连接可继续。</p></dialog></body></html>

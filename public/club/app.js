@@ -3,7 +3,7 @@ const $=id=>document.getElementById(id);
 let session=null,room=null,busy=false,polling=false,frameKey='',lastOk=0;
 try{session=JSON.parse(localStorage.getItem('club-session')||'null');$('nickname').value=localStorage.getItem('club-name')||'';}catch{}
 const uid=()=>Array.from(crypto.getRandomValues(new Uint8Array(32)),v=>v.toString(16).padStart(2,'0')).join('');
-const names={card:'炸金花',dice:'大话骰',tenhalf:'十点半',gomoku:'五子棋'};
+const names={card:'炸金花',dice:'大话骰',tenhalf:'十点半',gomoku:'五子棋',landlord:'斗地主'};
 function note(s){$('notice').textContent=s||'';}
 function remember(){try{if(session)localStorage.setItem('club-session',JSON.stringify(session));else localStorage.removeItem('club-session');localStorage.setItem('club-name',$('nickname').value.trim());}catch{}}
 async function api(path,body,token){const c=new AbortController(),timer=setTimeout(()=>c.abort(),65000);try{const r=await fetch('/club-api/'+path,{method:body?'POST':'GET',headers:{...(body?{'Content-Type':'application/json'}:{}),...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:c.signal,cache:'no-store'});const data=await r.json();if(!r.ok){const e=Error(data.error||'请求失败');Object.assign(e,{status:r.status,state:data.state,expired:data.expired});throw e;}lastOk=Date.now();return data;}catch(e){if(e.name==='AbortError')throw Error('连接超时，请重试');throw e;}finally{clearTimeout(timer);}}
@@ -29,7 +29,7 @@ if(!inside){if(frameKey){$('game-frame').src='about:blank';frameKey='';}return;}
 const count=room.playerCount||2,members=room.memberCount??(room.joined?2:1),others=room.names.map((_,i)=>i).filter(i=>i!==room.you&&room.online[i]);
 $('roomcode').textContent=room.code;$('connection').textContent=room.joined?'已连接 · '+members+'人已入座 · '+others.length+'位好友在线':'已入座 '+members+' / '+count+' 人 · 等待好友';$('players').textContent=room.names.map((n,i)=>i<members?n:'等待好友').join(' / ');$('lobby-hint').textContent=room.joined?'选一个游戏，全员一起进入；之后不用再输入房间码。':'把上面的房间码发给好友，等待'+count+'人到齐。';
 $('room-mode').value=String(count);$('room-mode').disabled=busy||room.you!==0||!room.canChangeMode||members>2;$('mode-hint').textContent=members>2?'三人已入座':room.canChangeMode?'开局前房主可选择双人或三人；三人模式需等三人到齐。':'本房间已开局，人数保持不变';
-for(const g of Object.keys(names)){$('pick-'+g).disabled=busy||!room.joined;const info=room.games[g];$('summary-'+g).textContent=info.round?'继续第 '+info.round+(g==='dice'?' 盅':' 局'):'进入游戏';}
+for(const g of Object.keys(names)){$('pick-'+g).disabled=busy||!room.joined||(g==='landlord'&&count!==3);const info=room.games[g];$('summary-'+g).textContent=g==='landlord'&&count!==3?'请创建三人房间':info.round?'继续第 '+info.round+(g==='dice'?' 盅':' 局'):'进入游戏';}
 const key=room.selected?room.selected+':'+room.epoch:'';if(key!==frameKey){frameKey=key;$('game-frame').src=key?'/club-game/'+room.selected+'/?epoch='+room.epoch:'about:blank';$('game-frame').title=room.selected?names[room.selected]:'游戏';}
 }
 function accept(v){if(room&&v.rev<room.rev)return;room=v;render();connectLive();}
