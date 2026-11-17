@@ -29,8 +29,8 @@ function paint(){
  $('bottom').replaceChildren(...(s.bottom.length?s.bottom:[null,null,null]).map(c=>card(c,true)));
  opponent($('opponent-left'),others[0]);opponent($('opponent-right'),others[1]);
  let title='',subtitle='';
- if(s.phase==='waiting'){title='三人到齐，开一局';subtitle='17张手牌 · 3张底牌 · 地主对战两位农民';}
- if(s.phase==='calling'||s.phase==='grabbing'){title=mine?'轮到你'+phases[s.phase]:s.names[s.turn]+'正在'+phases[s.phase];subtitle=s.phase==='calling'?'都不叫将自动重新发牌':s.names[s.caller]+'叫地主 · 每抢一次倍数×2';}
+ if(s.phase==='waiting'){title='不洗牌 · 三人到齐，开一局';subtitle='成组收牌 · 切牌发牌 · 17张手牌＋3张底牌';}
+ if(s.phase==='calling'||s.phase==='grabbing'){title=mine?'轮到你'+phases[s.phase]:s.names[s.turn]+'正在'+phases[s.phase];subtitle=s.phase==='calling'?'不洗牌模式 · 都不叫将切牌重发':s.names[s.caller]+'叫地主 · 每抢一次倍数×2';}
  if(s.phase==='doubling'){title=s.landlord===s.you?'你是地主！选择是否加倍':'地主是'+s.names[s.landlord];subtitle=s.doubles[s.you]===null?'选择加倍后，等待三人全部确认':'你已确认，等待其余玩家选择';}
  if(playing){title=mine?(s.lastPlay?'轮到你出牌':'由你领出，自由出牌'):s.names[s.turn]+'正在出牌';subtitle=s.lastPlay?s.names[s.lastPlay.seat]+'出了'+s.lastPlay.label+' · '+(s.lastPlay.cards.length)+'张':(s.landlord===s.you?'你是地主':'你与'+s.names[[0,1,2].find(i=>i!==s.you&&i!==s.landlord)]+'是农民队友');}
  if(s.phase==='ended'){const won=(s.winner===s.landlord)===(s.you===s.landlord);title=(won?'你赢了！':'本局失利')+' · '+(s.winner===s.landlord?'地主获胜':'农民获胜');subtitle=(s.spring?s.spring+' · ':'')+'公共倍数 ×'+s.multiplier;}
@@ -48,7 +48,7 @@ function paint(){
  else{const wait=document.createElement('span');wait.className='waiting';wait.textContent=s.phase==='doubling'?'等待所有玩家确认加倍…':'等待'+s.names[s.turn]+'操作…';$('actions').append(wait);}
  $('my-name').textContent=(s.landlord===s.you?'👑 地主':s.landlord===null?'我的手牌':'👤 农民')+' · '+s.counts[s.you]+'张';$('my-score').textContent='积分 '+s.scores[s.you]+(s.doubles[s.you]===2?' · 加倍':'');
  const hand=s.hands[s.you];$('hand').replaceChildren();for(let start=0;start<hand.length;start+=10){const row=document.createElement('div');row.className='hand-row';for(const c of hand.slice(start,start+10))row.append(card(c,false,true));$('hand').append(row);}
- $('footer').textContent=playing?(s.table.map((v,i)=>v?.pass?s.names[i]+'：不出':null).filter(Boolean).join(' · ')||'点牌选中，再点取消 · 提示可循环选择合法出牌'):'虚拟积分 · 叫地主 → 抢地主 → 加倍 → 出牌';paintSelection();
+ $('footer').textContent=playing?(s.table.map((v,i)=>v?.pass?s.names[i]+'：不出':null).filter(Boolean).join(' · ')||'点牌选中，再点取消 · 提示可循环选择合法出牌'):'不洗牌 · 成组收牌再切牌 · 虚拟积分';paintSelection();
 }
 function paintSelection(){
  if(!state)return;const myTurn=state.phase==='playing'&&state.turn===state.you;for(const el of $('hand').querySelectorAll('button')){const on=selected.has(Number(el.dataset.card));el.classList.toggle('selected',on);el.setAttribute('aria-pressed',String(on));el.disabled=busy||!myTurn;}

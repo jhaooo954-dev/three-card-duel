@@ -67,8 +67,39 @@ test('three-client HTTP integration covers private state, retries, stale revisio
   while((await get(0)).phase==='grabbing'){const s=await get(0);assert.equal((await send(s.turn,{type:'grab',yes:false})).status,200);}for(let i=0;i<3;i++)assert.equal((await send(i,{type:'double',yes:false})).status,200);
   const saved=await get(0),oldEpoch=room.epoch;await select('card');await select('landlord');assert.deepEqual((await get(0)).hands,saved.hands);assert.equal((await send(saved.turn,{type:'pass'},{epoch:oldEpoch})).status,409);
   let steps=0;while((await get(0)).phase==='playing'&&steps++<300){const publicState=await get(0),i=publicState.turn,s=await get(i),hints=G.moves(s.hands[i],s.lastPlay?.pattern),a=hints.length?{type:'play',cards:hints[0].cards}:{type:'pass'};r=await send(i,a);assert.equal(r.status,200,JSON.stringify(r.v));}const end=await get(0);assert.equal(end.phase,'ended');assert.equal(end.scores.reduce((a,b)=>a+b),0);await select(null);await select('landlord');assert.deepEqual((await get(2)).scores,end.scores);
+  const secondBody={code,epoch:room.epoch,id:'second-round-once',rev:end.rev,action:{type:'start',round:end.round}};const second=await api('game/landlord/action',secondBody);assert.equal(second.status,200);assert.equal(second.v.round,2);assert.equal(second.v.dealMode,'no-shuffle');assert.deepEqual((await api('game/landlord/action',secondBody)).v.hands,second.v.hands);for(let n=0;n<3;n++){const current=await get(0);assert.equal((await send(current.turn,{type:'call',yes:false})).status,200);}const recut=await get(0);assert.equal(recut.round,2);assert.equal(recut.redeals,1);assert.deepEqual(recut.scores,end.scores);assert.ok(!('deck' in recut));assert.ok(!('playedPacks' in recut));
   for(const asset of ['','app.js','rules.js','style.css'])assert.equal((await fetch(base+'/club-game/landlord/'+asset)).status,200);
   await api('leave',{code});code=null;
   room=(await api('create',{token:tokens[0],playerCount:2})).v;code=room.code;room=(await api('join',{token:tokens[1],code},1)).v;assert.equal((await api('select',{code,rev:room.rev,id:'wrong-mode',game:'landlord'})).status,400);
  }finally{for(const ctl of controllers)ctl.abort();if(code)await api('leave',{code});server.closeAllConnections();await new Promise(r=>server.close(r));}
+});
+
+const seeded=seed=>max=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return Math.floor(seed/4294967296*max);};
+const circularContains=(deck,packet)=>{const i=deck.indexOf(packet[0]);return i>=0&&packet.every((c,j)=>deck[(i+j)%deck.length]===c);};
+test('no-shuffle opening pools keep 54 unique cards and produce more intact bombs',()=>{
+ let ordinaryBombs=0,modeBombs=0;const bombs=deck=>[0,1,2].map(i=>deck.slice(i*17,i*17+17)).reduce((sum,hand)=>{const counts=new Map();for(const c of hand)counts.set(G.rank(c),(counts.get(G.rank(c))||0)+1);return sum+[...counts.values()].filter(n=>n===4).length;},0);
+ for(let seed=1;seed<=120;seed++){const rng=seeded(seed),deck=Array.from({length:54},(_,i)=>i);for(let i=53;i>0;i--){const j=rng(i+1);[deck[i],deck[j]]=[deck[j],deck[i]];}const opening=G.openingDeck(deck,rng);assert.equal(opening.length,54);assert.equal(new Set(opening).size,54);assert.deepEqual(opening.slice().sort((a,b)=>a-b),Array.from({length:54},(_,i)=>i));ordinaryBombs+=bombs(deck);modeBombs+=bombs(opening);}
+ assert.ok(modeBombs>ordinaryBombs*3,JSON.stringify({ordinaryBombs,modeBombs}));
+});
+test('stacking and cutting retain every packet in circular order and cannot add, drop or repeat cards',()=>{
+ const packets=[...Array.from({length:13},(_,r)=>[r,r+13,r+26,r+39]),[52,53]];
+ for(let seed=1;seed<=40;seed++){const deck=G.stackPackets(packets,seeded(seed));assert.equal(new Set(deck).size,54);for(const packet of packets)assert.ok(circularContains(deck,packet),'split packet '+packet);}
+ const deck=Array.from({length:54},(_,i)=>i);assert.deepEqual(G.cutDeck(deck,()=>12),[...deck.slice(13),...deck.slice(0,13)]);assert.throws(()=>G.openingDeck([...deck.slice(0,53),0]));assert.throws(()=>G.stackPackets([deck.slice(0,53)]));
+});
+test('all-pass only cuts the existing deck; it never calls the opening generator again or alters scores',()=>{
+ const s=initial();let seeds=0;const source=()=>{seeds++;return Array.from({length:54},(_,i)=>i);},rng=seeded(24);
+ G.act(s,0,{type:'start',round:0},source,rng);const original=s.deck.slice();assert.equal(seeds,1);
+ for(let j=0;j<3;j++)G.act(s,s.turn,{type:'call',yes:false,round:s.round},()=>{throw Error('must not reshuffle');},()=>6);
+ assert.deepEqual(s.deck,[...original.slice(7),...original.slice(0,7)]);assert.equal(s.redeals,1);assert.equal(s.round,1);assert.equal(seeds,1);assert.deepEqual(s.scores,[0,0,0]);assert.equal(s.playedPacks.length,0);
+ const v=G.view(s,0,'x',[0,0,0]);assert.equal(v.dealMode,'no-shuffle');for(const key of ['deck','playedPacks','candidate','grabQueue'])assert.ok(!(key in v));assert.ok(v.hands[1].every(c=>c===null));assert.deepEqual(v.bottom,[null,null,null]);
+});
+test('multiple full rounds reuse the real played cards and remainders, preserve played combinations and reset only per-round data',()=>{
+ const s=initial(),rng=seeded(119);let sourceCalls=0;const source=()=>{sourceCalls++;return Array.from({length:54},(_,i)=>i);};
+ for(let round=1;round<=4;round++){
+  const previousGroups=round>1?s.playedPacks.map(cs=>cs.slice()):[],previousScores=s.scores.slice();
+  G.act(s,0,{type:'start',round:s.round},source,rng);assert.equal(sourceCalls,1);assert.equal(s.round,round);assert.deepEqual(s.scores,previousScores);assert.equal(s.playedPacks.length,0);assert.deepEqual(s.delta,[0,0,0]);for(const cs of previousGroups)assert.ok(circularContains(s.deck,cs));
+  assert.deepEqual([...s.hands.flat(),...s.bottom].sort((a,b)=>a-b),Array.from({length:54},(_,i)=>i));act(s,s.turn,{type:'call',yes:true});while(s.phase==='grabbing')act(s,s.turn,{type:'grab',yes:false});for(let i=0;i<3;i++)act(s,i,{type:'double',yes:false});
+  const played=[];let steps=0;while(s.phase==='playing'&&steps++<300){const i=s.turn,hints=G.moves(s.hands[i],s.lastPlay?.pattern);if(!hints.length)act(s,i,{type:'pass'});else{const cs=hints[0].cards;played.push(G.sort(cs));act(s,i,{type:'play',cards:cs});}assert.deepEqual([...s.playedPacks.flat(),...s.hands.flat()].sort((a,b)=>a-b),Array.from({length:54},(_,i)=>i));}
+  assert.equal(s.phase,'ended');assert.deepEqual(s.playedPacks,played);assert.equal(s.scores.reduce((a,b)=>a+b),0);const packets=G.collectPackets(s);assert.equal(packets.flat().length,54);assert.equal(new Set(packets.flat()).size,54);
+ }
 });
