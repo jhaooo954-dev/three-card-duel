@@ -1,6 +1,6 @@
 'use strict';
 const $=id=>document.getElementById(id),R=globalThis.LandlordRules,epoch=Number(new URLSearchParams(location.search).get('epoch')||0);
-let session=null,state=null,busy=false,polling=false,lastLive=0,selected=new Set(),hintList=null,hintIndex=0,renderKey='';
+let session=null,state=null,busy=false,polling=false,selected=new Set(),hintList=null,hintIndex=0,renderKey='';
 try{session=JSON.parse(localStorage.getItem('club-session')||'null');}catch{}
 const phases={waiting:'准备开局',calling:'叫地主',grabbing:'抢地主',doubling:'选择加倍',playing:'出牌中',ended:'本局结束'};
 const ranks={11:'J',12:'Q',13:'K',14:'A',15:'2',16:'小王',17:'大王'},suits=['♠','♥','♣','♦'];
@@ -14,7 +14,7 @@ function card(c,mini=false,interactive=false){
  return el;
 }
 async function api(body){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),65000);try{const response=await fetch('/club-api/game/landlord/'+(body?'action':'state?code='+encodeURIComponent(session.code)),{method:body?'POST':'GET',headers:{Authorization:'Bearer '+session.token,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:controller.signal,cache:'no-store'});const data=await response.json();if(!response.ok){const error=Error(data.error||'连接失败');error.state=data.state;throw error;}return data;}catch(e){if(e.name==='AbortError')throw Error('连接超时，请重试');throw e;}finally{clearTimeout(timer);}}
-function accept(s){if(state&&s.rev<state.rev)return;const changed=!state||state.rev!==s.rev;const key=s.round+':'+s.phase+':'+s.turn+':'+s.hands[s.you].join(',');if(key!==renderKey){selected.clear();hintList=null;hintIndex=0;renderKey=key;}state=s;if(changed)paint();}
+function accept(s){if(state&&s.rev<state.rev)return;const changed=!state||state.rev!==s.rev||state.online.some((online,i)=>online!==s.online[i]);const key=s.round+':'+s.phase+':'+s.turn+':'+s.hands[s.you].join(',');if(key!==renderKey){selected.clear();hintList=null;hintIndex=0;renderKey=key;}state=s;if(changed)paint();}
 function addAction(label,run,primary=false,disabled=false,id){const b=document.createElement('button');b.textContent=label;b.className=primary?'primary':'';b.disabled=busy||disabled;b.onclick=run;if(id)b.id=id;$('actions').append(b);return b;}
 function opponent(el,i){
  el.replaceChildren();el.classList.toggle('active',['calling','grabbing','playing'].includes(state.phase)&&state.turn===i||state.phase==='doubling'&&state.doubles[i]===null);
@@ -56,6 +56,6 @@ function paintSelection(){
 }
 function hint(){if(!state||busy)return;if(!hintList){hintList=R.moves(state.hands[state.you],state.lastPlay?.pattern);hintIndex=0;}if(!hintList.length){selected.clear();paintSelection();note('没有能压过上家的牌，可以选择“不出”。');return;}const h=hintList[hintIndex++%hintList.length];selected=new Set(h.cards);paintSelection();note('提示 '+((hintIndex-1)%hintList.length+1)+' / '+hintList.length+' · '+h.label+'，再次点提示切换。');}
 async function action(a){if(busy||!state||!session)return;busy=true;paint();try{accept(await api({code:session.code,epoch,id:Array.from(crypto.getRandomValues(new Uint8Array(12)),v=>v.toString(16).padStart(2,'0')).join(''),rev:state.rev,action:{...a,round:state.round}}));note('');}catch(e){if(e.state)accept(e.state);note(e.message);}finally{busy=false;paint();}}
-async function poll(){if(!session){note('请从统一房间大厅进入斗地主。');return;}if(polling||busy||document.hidden||Date.now()-lastLive<12000)return;polling=true;try{accept(await api());}catch(e){note(e.message);}finally{polling=false;}}
-window.addEventListener('message',e=>{if(e.source===parent&&e.origin===location.origin&&e.data?.type==='club-live-state'&&e.data.game==='landlord'&&e.data.epoch===epoch&&e.data.code===session?.code&&e.data.state){lastLive=Date.now();accept(e.data.state);}});
-$('rules-open').onclick=()=>$('rules').showModal();$('rules-close').onclick=()=>$('rules').close();document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});setInterval(poll,1000);poll();if(parent!==window)parent.postMessage({type:'club-live-ready'},location.origin);
+async function poll(){if(!session){note('请从统一房间大厅进入斗地主。');return;}if(polling||busy||document.hidden||isLive())return;polling=true;try{accept(await api());}catch(e){note(e.message);}finally{polling=false;}}
+const isLive=window.watchClubGame('landlord',()=>session,accept);
+$('rules-open').onclick=()=>$('rules').showModal();$('rules-close').onclick=()=>$('rules').close();document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});setInterval(poll,1000);poll();

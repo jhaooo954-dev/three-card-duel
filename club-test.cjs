@@ -39,7 +39,7 @@ test('both seats see one shared dealer event; retries do not redeal or replay; e
  assert.deepEqual(s.hands.flat(),Array(6).fill(null));assert.deepEqual(other.hands.flat(),Array(6).fill(null));
  const retry=(await api('/club-api/game/card/action',body,A)).v;
  assert.equal(retry.dealerEvent.id,s.dealerEvent.id);assert.equal(retry.round,1);
- for(const file of ['table-dealer.js','table-dealer.css'])assert.equal((await fetch(base+'/club/'+file)).status,200);
+ for(const file of ['table-dealer.js','table-dealer.css','live.js'])assert.equal((await fetch(base+'/club/'+file)).status,200);
 }));
 test('tenhalf dealer shuffles once per shoe and continues the same deck for draws and next hands',async()=>fixture(async(api)=>{
  let r=(await api('/club-api/create',{token:A})).v;const code=r.code;r=(await api('/club-api/join',{token:B,code})).v;
@@ -163,7 +163,7 @@ test('three-seat live streams receive third-player actions immediately without l
  try{const next=await Promise.all([A,B,C].map(stream));let snapshots=await Promise.all(next.map(f=>f()));assert.deepEqual(snapshots.map(s=>s.room.you),[0,1,2]);
  r=(await api('/club-api/select',{code,id:'3s-select',rev:r.rev,game:'card'},C)).v;await Promise.all(next.map(f=>f()));let s=(await api('/club-api/game/card/state?code='+code,null,A)).v,id=0;
  async function act(token,action){const v=await api('/club-api/game/card/action',{code,id:'3s-'+(++id),rev:s.revision,epoch:r.epoch,action},token);assert.equal(v.status,200);s=v.v;return Promise.all(next.map(f=>f()));}
- await act(A,'deal');await act(B,'follow');snapshots=await act(C,'look3');assert.ok(snapshots[0].state.hands[2].every(c=>c===null));assert.ok(snapshots[1].state.hands[2].every(c=>c===null));assert.ok(snapshots[2].state.hands[2].every(Boolean));for(const snap of snapshots){assert.equal(snap.state.revision,s.revision);for(const token of [A,B,C])assert.ok(!JSON.stringify(snap).includes(token));}
+ await act(A,'deal');await act(B,'follow');snapshots=await act(C,'look3');assert.deepEqual(snapshots.map(s=>s.actionId),[undefined,undefined,'3s-3']);assert.ok(snapshots[0].state.hands[2].every(c=>c===null));assert.ok(snapshots[1].state.hands[2].every(c=>c===null));assert.ok(snapshots[2].state.hands[2].every(Boolean));for(const snap of snapshots){assert.equal(snap.state.revision,s.revision);for(const token of [A,B,C])assert.ok(!JSON.stringify(snap).includes(token));}
  }finally{for(const a of aborts)a.abort();}
 }));
 
@@ -192,4 +192,104 @@ test('targeted open passes authenticated API; missing selection rejected and dup
  const first=await api('/club-api/game/card/action',body,B);assert.equal(first.status,200);s=first.v;assert.equal(s.active,true);assert.equal(s.pot,20);assert.equal(s.folded.filter(Boolean).length,1);assert.equal(s.folded[0],false);assert.ok(s.hands[0].every(x=>x===null));
  const duplicate=await api('/club-api/game/card/action',body,B);assert.equal(duplicate.v.pot,20);assert.equal(duplicate.v.revision,s.revision);
  const third=(await api('/club-api/game/card/state?code='+code,null,A)).v;assert.ok(third.hands.flat().every(x=>x===null));
+ const delayed=await api('/club-api/game/card/action',{...body,id:'old-revision'},B);assert.equal(delayed.status,409);assert.equal(delayed.v.state.revision,s.revision);
 }));
+
+test('three-player bets and targeted comparisons can cross 20 actions without revealing the table',()=>{
+ const card=require('./club-engines/card.cjs');
+ const s=card.initial(A,3);s.players=[A,B,C];
+ card.action(s,0,'deal');
+ for(let n=0;n<24;n++)card.action(s,s.turn,n===19?'raise':'follow');
+ assert.equal(s.steps,24);
+ assert.equal(s.active,true);
+ assert.equal(s.revealed,false);
+ assert.equal(card.view(s,0,1,'123456').actionLimit,null);
+ assert.ok(card.view(s,0,1,'123456').hands.flat().every(c=>c===null));
+ card.action(s,s.turn,'look1');
+ card.action(s,s.turn,{type:'open',target:(s.turn+1)%3});
+ assert.equal(s.active,true);
+ assert.equal(s.revealed,false);
+ assert.equal(s.folded.filter(Boolean).length,1);
+ card.action(s,s.turn,'open');
+ assert.equal(s.active,false);
+ assert.equal(s.revealed,true);
+});
+
+test('two-player hands still settle at the 20th bet',()=>{
+ const card=require('./club-engines/card.cjs');
+ const s=card.initial(A);s.players=[A,B];
+ card.action(s,0,'deal');
+ for(let n=0;n<19;n++)card.action(s,s.turn,'follow');
+ assert.equal(s.active,true);
+ card.action(s,s.turn,'follow');
+ assert.equal(s.active,false);
+ assert.equal(s.revealed,true);
+ assert.equal(card.view(s,0,1,'123456').actionLimit,20);
+});
+
+test('card controls keep their buttons and accept a matching live confirmation before the HTTP response',async()=>{
+ const card=require('./club-engines/card.cjs'),code='123456',epoch=7;
+ const s=card.initial(A,3);s.players=[A,B,C]; card.action(s,0,'deal');card.action(s,1,'look1');
+ const first=card.view(s,1,2,code);first.names=['甲','乙','丙'];
+ const elements=new Map(),messages=[],requests=[];
+ class Element{
+  constructor(){this.children=[];this.dataset={};this.attributes={};this.events={};const classes=new Set();this.classList={add:key=>classes.add(key),remove:key=>classes.delete(key),toggle:(key,on)=>on?classes.add(key):classes.delete(key)};}
+  append(...children){this.children.push(...children);}
+  replaceChildren(...children){this.children=children;}
+  setAttribute(key,value){this.attributes[key]=value;}
+  addEventListener(type,handler){this.events[type]=handler;}
+  querySelector(){return this.avatar??=new Element();}
+  after(child){elements.set(child.id,child);}
+ }
+ const element=id=>{
+  if(!elements.has(id))elements.set(id,new Element());
+  return elements.get(id);
+ };
+ const parent={postMessage(){}},origin='http://localhost';
+ const document={hidden:false,body:new Element(),getElementById:element,createElement:()=>new Element(),querySelector:element,querySelectorAll:()=>[],addEventListener(){}};
+ const context=vm.createContext({
+  document,parent,URLSearchParams,AbortController,location:{origin,search:'?epoch='+epoch},
+  localStorage:{getItem:()=>JSON.stringify({code,token:B})},crypto:crypto.webcrypto,
+  addEventListener:(type,handler)=>{if(type==='message')messages.push(handler);},setTimeout:()=>0,clearTimeout(){},
+  fetch:async(url,options)=>new Promise(resolve=>requests.push({url,body:JSON.parse(options.body),resolve}))
+ });
+ context.window=context;
+ vm.runInContext(fs.readFileSync('public/club/live.js','utf8'),context);
+ vm.runInContext(fs.readFileSync('public/club-games/card/app.js','utf8'),context);
+ function deliver(state,actionId,overrides={}){
+  const data=structuredClone({type:'club-live-state',game:'card',code,epoch,state,actionId,...overrides});
+  for(const handler of messages)handler({source:parent,origin,data});
+ }
+ deliver(first);
+ element('open').events.click();
+ const buttons=element('openChoices').children;
+ const target=buttons[2];
+ assert.equal(target.textContent,'开 丙');
+ assert.equal(buttons[0].hidden,false);
+ assert.equal(target.hidden,false);
+ assert.equal(buttons[1].hidden,true);
+ assert.equal(target.disabled,false);
+ const originalLog=element('log').children;
+ deliver(first);
+ assert.equal(element('log').children,originalLog);
+ assert.equal(element('openChoices').children[2],target);
+
+ const pending=target.events.click();
+ target.events.click();
+ assert.equal(requests.length,1);
+ assert.equal(element('actionTitle').textContent,'开牌已提交，等待确认…');
+ assert.equal(element('.control-panel').attributes['aria-busy'],'true');
+ const [{body,resolve}]=requests;
+ assert.equal(body.rev,2);assert.equal(body.action.target,2);
+ card.action(s,1,{type:'open',target:2});
+ const updated=card.view(s,1,3,code);updated.names=first.names;
+ deliver(updated,body.id,{epoch:epoch+1});
+ assert.equal(element('.control-panel').attributes['aria-busy'],'true');
+ deliver(updated,body.id);
+ assert.match(element('message').textContent,/剩余两家继续/);
+ assert.equal(element('.control-panel').attributes['aria-busy'],'false');
+ assert.equal(element('cards1').children.every(card=>card.attributes['aria-label']==='未展示的牌'),true);
+ resolve({ok:false,status:503,json:async()=>({error:'delayed response'})});
+ await pending;
+ assert.doesNotMatch(element('actionHint').textContent,/delayed response/);
+});

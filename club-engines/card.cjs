@@ -1,5 +1,6 @@
 'use strict';
 const crypto=require('node:crypto').webcrypto;
+const ACTION_LIMIT=20;
 const SUITS=['♠','♥','♣','♦'];
 function evaluate(cards){const r=cards.map(c=>c.rank).sort((a,b)=>b-a),u=new Set(r).size,f=cards.every(c=>c.suit===cards[0].suit),s=u===3&&(r[0]-r[2]===2||r.join(',')==='14,3,2'),h=r.join(',')==='14,3,2'?3:r[0];if(u===1)return {score:[5,r[0]],name:'豹子'};if(f&&s)return {score:[4,h],name:'顺金'};if(f)return {score:[3,...r],name:'金花'};if(s)return {score:[2,h],name:'顺子'};if(u===2){const p=r.find((n,i)=>r.indexOf(n)!==i);return {score:[1,p,r.find(n=>n!==p)],name:'对子'};}return {score:[0,...r],name:'单张'};}
 function compare(a,b){const x=evaluate(a).score,y=evaluate(b).score;for(let i=0;i<x.length;i++){const d=x[i]-y[i];if(d)return Math.sign(d);}return 0;}
@@ -39,15 +40,15 @@ function action(s,i,input){
   s.folded[loser]=true;log(s,name(i)+'投入 '+n+'，向'+name(target)+'开牌');
   const left=alive(s),result=name(loser)+'比牌落败';
   if(left.length===1)finish(s,left[0],result+'，'+name(left[0])+'获胜，全员亮牌');
-  else{s.message=result+'，剩余两家继续';log(s,s.message);s.steps++;s.turn=next(s,i);if(s.steps>=20)settle(s,null,'达到本局上限，自动比牌');}
+  else{s.message=result+'，剩余两家继续';log(s,s.message);s.steps++;s.turn=next(s,i);}
   return;
  }
  if(!['raise','follow'].includes(a))throw Error('操作无效');
  if(a==='raise'){if(s.base>=100)throw Error('底分最高 100');s.base+=10;}
  const n=pay(s,i,cost(s,i));s.message=name(i)+(a==='raise'?'加注 ':s.seen[i]?'跟注 ':'闷牌 ')+n;log(s,s.message);s.steps++;
- if(s.steps>=20){settle(s,null,'达到本局上限，自动比牌');return;}
+ if(s.players.length===2&&s.steps>=ACTION_LIMIT){settle(s,null,'达到本局上限，自动比牌');return;}
  s.turn=next(s,i);
 }
-function view(s,i,revision,code){return {rulesVersion:3,targetedOpen:true,code,revision,you:i,joined:s.players.every(Boolean),playerCount:s.players.length,folded:s.folded,callCost:cost(s,i),openCost:cost(s,i),raiseCost:(s.base+10)*(s.looked[i]>0?2:1),dealer:s.dealer,banks:s.banks,lastPot:s.lastPot,lastBets:s.lastBets,hands:s.hands.map((h,j)=>h.map((c,k)=>s.revealed||(j===i&&k<s.looked[i])?c:null)),types:s.hands.map((h,j)=>h.length&&(s.revealed||(j===i&&s.looked[i]===3))?evaluate(h).name:''),seen:s.seen,looked:s.looked,round:s.round,turn:s.turn,base:s.base,pot:s.pot,steps:s.steps,active:s.active,winner:s.winner,stats:s.stats,message:s.message,logs:s.logs,resetRequests:s.resetRequests||[]};}
+function view(s,i,revision,code){return {rulesVersion:3,targetedOpen:true,code,revision,you:i,joined:s.players.every(Boolean),playerCount:s.players.length,folded:s.folded,callCost:cost(s,i),openCost:cost(s,i),raiseCost:(s.base+10)*(s.looked[i]>0?2:1),dealer:s.dealer,banks:s.banks,lastPot:s.lastPot,lastBets:s.lastBets,hands:s.hands.map((h,j)=>h.map((c,k)=>s.revealed||(j===i&&k<s.looked[i])?c:null)),types:s.hands.map((h,j)=>h.length&&(s.revealed||(j===i&&s.looked[i]===3))?evaluate(h).name:''),seen:s.seen,looked:s.looked,round:s.round,turn:s.turn,base:s.base,pot:s.pot,steps:s.steps,actionLimit:s.players.length===2?ACTION_LIMIT:null,active:s.active,winner:s.winner,stats:s.stats,message:s.message,logs:s.logs,resetRequests:s.resetRequests||[]};}
 
 module.exports={initial,action,view,evaluate,compare};

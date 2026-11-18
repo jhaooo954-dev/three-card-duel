@@ -7,11 +7,24 @@ const rooms=new Map(),GAMES=['card','dice','tenhalf','gomoku','landlord'],valid=
 function shuffle(){const d=Array.from({length:52},(_,i)=>i);for(let i=51;i>0;i--){const j=crypto.randomInt(i+1);[d[i],d[j]]=[d[j],d[i]];}return d;}
 function create(token,playerName,count=2){const tokens=[token,...Array(count-1).fill(null)],names=[name(playerName,'房主'),...Array.from({length:count-1},(_,i)=>i?'好友二':'好友')],sets=()=>tokens.map(()=>new Set());const cs=card.initial(token,count);cs.players=tokens;return {tokens,names,selected:null,epoch:0,rev:0,dealSequence:0,dealerEvents:{},at:Date.now(),last:tokens.map((_,i)=>i?0:Date.now()),games:{card:cs,dice:dice.initial(tokens,names),tenhalf:(count===3?tenhalf3:tenhalf).initial(tokens,names),gomoku:gomoku.initial(tokens,names),landlord:landlord.initial(tokens,names)},versions:{card:0,dice:0,tenhalf:0},seen:{card:sets(),dice:sets(),tenhalf:sets(),gomoku:sets(),landlord:sets()},streams:new Set(),switches:sets()};}
 function canChangeMode(r){return !Object.values(r.games).some(s=>s.round>0);}
-function roomView(r,i,code){return {code,you:i,names:r.names,joined:r.tokens.every(Boolean),playerCount:r.tokens.length,memberCount:r.tokens.filter(Boolean).length,canChangeMode:canChangeMode(r),selected:r.selected,epoch:r.epoch,rev:r.rev,online:r.last.map((v,j)=>!!r.tokens[j]&&Date.now()-v<15000),games:{card:{round:r.games.card.round,active:r.games.card.active},dice:{round:r.games.dice.round,phase:r.games.dice.phase},tenhalf:{round:r.games.tenhalf.round,shoe:r.games.tenhalf.shoe,phase:r.games.tenhalf.phase},gomoku:{round:r.games.gomoku.round,phase:r.games.gomoku.phase},landlord:{round:r.games.landlord.round,phase:r.games.landlord.phase}}};}
+function onlineSeats(r){const now=Date.now();return r.last.map((seen,i)=>!!r.tokens[i]&&now-seen<15000);}
+function roomView(r,i,code){return {code,you:i,names:r.names,joined:r.tokens.every(Boolean),playerCount:r.tokens.length,memberCount:r.tokens.filter(Boolean).length,canChangeMode:canChangeMode(r),selected:r.selected,epoch:r.epoch,rev:r.rev,online:onlineSeats(r),games:{card:{round:r.games.card.round,active:r.games.card.active},dice:{round:r.games.dice.round,phase:r.games.dice.phase},tenhalf:{round:r.games.tenhalf.round,shoe:r.games.tenhalf.shoe,phase:r.games.tenhalf.phase},gomoku:{round:r.games.gomoku.round,phase:r.games.gomoku.phase},landlord:{round:r.games.landlord.round,phase:r.games.landlord.phase}}};}
 function gameView(r,g,i,code){const v=g==='card'?card.view(r.games.card,i,r.versions.card,code):(g==='dice'?dice:g==='gomoku'?gomoku:g==='landlord'?landlord:tenEngine(r)).view(r.games[g],i,code,r.last);v.names=r.names;const e=r.dealerEvents[g];if(e){const {at,...event}=e;v.dealerEvent={...event,remaining:Math.max(0,e.duration-(Date.now()-at))};}return v;}
 // Each stream receives only its authenticated seat's redacted game view.
 function snapshot(r,i,code){return {room:roomView(r,i,code),game:r.selected,state:r.selected?gameView(r,r.selected,i,code):null};}
-function broadcast(r,code){for(const c of r.streams){if(c.res.destroyed){r.streams.delete(c);continue;}if(!c.res.write('data: '+JSON.stringify(snapshot(r,c.i,code))+'\n\n'))c.res.destroy();}}
+function writeStream(client,packet){
+ const {res}=client;
+ if(!res.destroyed&&!res.writableEnded&&!res.write(packet))res.destroy();
+}
+function pushSnapshot(r,code,client,actionId){
+ const data=snapshot(r,client.i,code);
+ client.online=data.room.online.join(',');
+ if(actionId!==undefined)data.actionId=actionId;
+ writeStream(client,'data: '+JSON.stringify(data)+'\n\n');
+}
+function broadcast(r,code,actor,actionId){
+ for(const client of r.streams)pushSnapshot(r,code,client,client.i===actor?actionId:undefined);
+}
 function closeStreams(r){for(const c of r.streams)c.res.end();r.streams.clear();}
 function recordDeal(r,g,shuffle,recipients){r.dealerEvents[g]={id:++r.dealSequence,at:Date.now(),shuffle,recipients,duration:(shuffle?1000:0)+recipients.length*240+300};}
 function headers(res,child){res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors "+(child?"'self'":"'none'"));}
@@ -20,6 +33,7 @@ for(const g of GAMES){for(const file of ['index.html','app.js','style.css'])asse
 assets.set('/club-game/landlord/rules.js','club-games/landlord/rules.js');
 assets.set('/club-game/card/icon.svg','club-games/card/icon.svg');
 assets.set('/club-game/card/dealer.webp','club-games/card/dealer.webp');
+assets.set('/club/live.js','club/live.js');
 assets.set('/club/table-dealer.js','table-dealer.js');assets.set('/club/table-dealer.css','table-dealer.css');
 async function handleClub(req,res){const url=new URL(req.url,'http://localhost');if(assets.has(url.pathname)){const file=assets.get(url.pathname),target=path.join(__dirname,'public',file);headers(res,url.pathname.startsWith('/club-game/'));if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405);res.end();return true;}const bytes=fs.readFileSync(target),ext=path.extname(file);res.setHeader('Content-Type',{'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.webp':'image/webp'}[ext]);res.setHeader('Content-Length',bytes.length);res.end(req.method==='HEAD'?undefined:bytes);return true;}
 if(!url.pathname.startsWith('/club-api/'))return false;
@@ -33,8 +47,14 @@ if(i<0){send(403,{error:'你不在这个房间'});return true;}r.last[i]=Date.no
 if(url.pathname==='/club-api/events'&&req.method==='GET'){
  headers(res,false);res.writeHead(200,{'Content-Type':'text/event-stream; charset=utf-8','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.flushHeaders();req.socket.setNoDelay(true);
  const previous=[...r.streams].filter(c=>c.i===i);while(previous.length>=3)previous.shift().res.end();
- const client={res,i};r.streams.add(client);res.write('retry: 1000\n\ndata: '+JSON.stringify(snapshot(r,i,code))+'\n\n');
- const heartbeat=setInterval(()=>{const current=rooms.get(code);if(current){current.last[i]=Date.now();current.at=Date.now();}if(!res.write(': heartbeat\n\n'))res.destroy();},10000);heartbeat.unref();
+ const client={res,i};r.streams.add(client);writeStream(client,'retry: 1000\n\n');pushSnapshot(r,code,client);
+ const heartbeat=setInterval(()=>{
+  const current=rooms.get(code);
+  if(!current)return;
+  current.last[i]=Date.now();current.at=Date.now();
+  if(onlineSeats(current).join(',')!==client.online)pushSnapshot(current,code,client);
+  else writeStream(client,': heartbeat\n\n');
+ },4000);heartbeat.unref();
  res.on('close',()=>{clearInterval(heartbeat);r.streams.delete(client);});return true;
 }
 if(url.pathname==='/club-api/state'&&req.method==='GET'){send(200,roomView(r,i,code));return true;}
@@ -51,8 +71,9 @@ if(url.pathname==='/club-api/mode'&&req.method==='POST'){
 if(url.pathname==='/club-api/select'&&req.method==='POST'){if(b.game!==null&&!r.tokens.every(Boolean)){send(400,{error:'等待'+r.tokens.length+'人到齐后再选游戏'});return true;}if(b.game!==null&&!GAMES.includes(b.game)){send(400,{error:'请选择大厅里的游戏'});return true;}if(b.game==='landlord'&&r.tokens.length!==3){send(400,{error:'斗地主需要三人房间，请在开局前选择三人模式'});return true;}if(typeof b.id!=='string'||b.id.length>80){send(400,{error:'请求编号无效'});return true;}if(r.switches[i].has(b.id)){send(200,roomView(r,i,code));return true;}if(b.rev!==r.rev){send(409,{error:'好友已切换，请重试',state:roomView(r,i,code)});return true;}if(r.selected!==b.game){r.selected=b.game;r.epoch++;r.rev++;}broadcast(r,code);r.switches[i].add(b.id);if(r.switches[i].size>1000)r.switches[i].delete(r.switches[i].values().next().value);send(200,roomView(r,i,code));return true;}
 const m=url.pathname.match(/^\/club-api\/game\/(card|dice|tenhalf|gomoku|landlord)\/(state|action)$/);
 if(m){const g=m[1];if(m[2]==='state'&&req.method==='GET'){send(200,gameView(r,g,i,code));return true;}if(m[2]!=='action'||req.method!=='POST'){send(405,{error:'方法不支持'});return true;}if(r.selected!==g||b.epoch!==r.epoch){send(409,{error:'游戏已切换，请从房间大厅进入'});return true;}if(typeof b.id!=='string'||b.id.length>80){send(400,{error:'请求编号无效'});return true;}const seen=r.seen[g][i];if(seen.has(b.id)){send(200,gameView(r,g,i,code));return true;}const revision=g==='card'?r.versions.card:r.games[g].rev;if(b.rev!==revision){send(409,{error:'牌局已更新，请重试',state:gameView(r,g,i,code)});return true;}
-if(g==='card'){card.action(r.games.card,i,b.action);r.versions.card++;if(b.action==='deal')recordDeal(r,g,true,Array.from({length:3},()=>r.tokens.map((_,j)=>j)).flat());}else if(g==='landlord')landlord.act(r.games.landlord,i,b.action||{});else if(g==='gomoku')gomoku.act(r.games.gomoku,i,b.action||{});else if(g==='dice')dice.act(r.games.dice,i,b.action||{},()=>Array.from({length:5},()=>crypto.randomInt(1,7)));else{const s=r.games.tenhalf,type=b.action?.type,fresh=s.round===0||s.deck.length<r.tokens.length,recipient=type==='deal'?(r.tokens.length===3?s.guest:1-s.dealer):s.dealer;tenEngine(r).act(s,i,b.action||{},shuffle);if(type==='start')recordDeal(r,g,fresh,r.tokens.map((_,j)=>j));else if(type==='deal'||type==='draw')recordDeal(r,g,false,[recipient]);}
-broadcast(r,code);seen.add(b.id);if(seen.size>1000)seen.delete(seen.values().next().value);send(200,gameView(r,g,i,code));return true;}
+if(g==='card'){card.action(r.games.card,i,b.action);r.versions.card++;if(b.action==='deal'||b.action?.type==='deal')recordDeal(r,g,true,Array.from({length:3},()=>r.tokens.map((_,j)=>j)).flat());}else if(g==='landlord')landlord.act(r.games.landlord,i,b.action||{});else if(g==='gomoku')gomoku.act(r.games.gomoku,i,b.action||{});else if(g==='dice')dice.act(r.games.dice,i,b.action||{},()=>Array.from({length:5},()=>crypto.randomInt(1,7)));else{const s=r.games.tenhalf,type=b.action?.type,fresh=s.round===0||s.deck.length<r.tokens.length,recipient=type==='deal'?(r.tokens.length===3?s.guest:1-s.dealer):s.dealer;tenEngine(r).act(s,i,b.action||{},shuffle);if(type==='start')recordDeal(r,g,fresh,r.tokens.map((_,j)=>j));else if(type==='deal'||type==='draw')recordDeal(r,g,false,[recipient]);}
+seen.add(b.id);if(seen.size>1000)seen.delete(seen.values().next().value);
+send(200,gameView(r,g,i,code));broadcast(r,code,i,b.id);return true;}
 send(404,{error:'接口不存在'});return true;
 }catch(e){if(!res.headersSent)send(400,{error:e.message||'操作失败'});else res.end();return true;}}
 setInterval(()=>{for(const[c,r]of rooms)if(Date.now()-r.at>12*3600000){closeStreams(r);rooms.delete(c);}},60000).unref();

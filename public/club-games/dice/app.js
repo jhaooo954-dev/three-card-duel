@@ -1,12 +1,22 @@
 'use strict';
 const CLUB_EPOCH=Number(new URLSearchParams(location.search).get('epoch')||0);
 const $=id=>document.getElementById(id);
-let session=null,state=null,busy=false,polling=false,peeked=false,lastOk=0,stopped=false,rollEnds=0;
+let session=null,state=null,busy=false,polling=false,peeked=false,lastOk=0,stopped=false,rollEnds=0,rollTimer=null;
 try{session=JSON.parse(localStorage.getItem('club-session')||'null');$('nickname').value=localStorage.getItem('club-name')||'';}catch{}
 const token=()=>Array.from(crypto.getRandomValues(new Uint8Array(32)),x=>x.toString(16).padStart(2,'0')).join('');
 function note(m){$('notice').textContent=m||'';}
 async function api(route,body,auth){if(route.startsWith('/api/state'))route=route.replace('/api/state','/club-api/game/dice/state');else if(route==='/api/action'){route='/club-api/game/dice/action';body.epoch=CLUB_EPOCH;}const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),65000);try{const r=await fetch(route,{method:body?'POST':'GET',headers:{...(body?{'Content-Type':'application/json'}:{}),...(auth?{Authorization:'Bearer '+auth}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:controller.signal,cache:'no-store'});const data=await r.json();if(!r.ok){const e=Error(data.error||'请求失败');e.status=r.status;e.state=data.state;e.expired=data.expired;throw e;}lastOk=Date.now();return data;}catch(e){if(e.name==='AbortError')throw Error('连接超时，请检查网络后重试');throw e;}finally{clearTimeout(timeout);}}
-function accept(v){if(state&&v.rev<state.rev)return;if(!state||v.round!==state.round)peeked=false;rollEnds=performance.now()+(v.rollRemaining||0);state=v;paint();}
+function accept(v){
+ if(state&&v.rev<state.rev)return;
+ if(!state||v.round!==state.round)peeked=false;
+ const remaining=v.rollRemaining||0;
+ rollEnds=performance.now()+remaining;
+ clearTimeout(rollTimer);
+ if(remaining>0)rollTimer=setTimeout(refreshCups,remaining+16);
+ if(state&&v.rev===state.rev&&state.online.every((online,i)=>online===v.online[i])){refreshCups();return;}
+ state=v;paint();
+}
+const isLive=window.watchClubGame('dice',()=>session,accept);
 function save(){try{localStorage.setItem('dice-session',JSON.stringify(session));localStorage.setItem('dice-name',$('nickname').value.trim());}catch{}}
 async function enter(create){if(busy)return;busy=true;note('正在连接，首次唤醒服务器可能需要约1分钟…');$('create').disabled=$('join').disabled=true;const t=token();try{const v=await api(create?'/api/create':'/api/join',{token:t,name:$('nickname').value.trim(),code:$('code').value.trim()});session={code:v.code,token:t};state=null;save();peeked=false;stopped=false;accept(v);note('');}catch(e){note(e.message);}finally{busy=false;$('create').disabled=$('join').disabled=false;}}
 async function action(a){if(busy||!state||!session)return;busy=true;paint();const sessionAtStart=session,roundAtStart=state.round,id=token().slice(0,24);a.round=roundAtStart;try{let v;for(let attempt=0;attempt<2;attempt++){try{v=await api('/api/action',{code:sessionAtStart.code,id,rev:state.rev,action:a},sessionAtStart.token);break;}catch(e){if(e.state)accept(e.state);if(e.status===409&&e.state?.round===roundAtStart){if(a.type==='open'&&e.state.phase==='ended'){v=e.state;break;}if(a.type==='ready'&&e.state.ready[e.state.you]){v=e.state;break;}if(attempt===0&&(a.type==='open'&&e.state.phase==='playing'||a.type==='ready'&&e.state.phase!=='playing'))continue;}throw e;}}if(session===sessionAtStart){accept(v);note('');}}catch(e){if(session===sessionAtStart)note(e.message);}finally{busy=false;paint();}}
@@ -31,5 +41,5 @@ $('logs').replaceChildren();for(const line of s.logs){const li=document.createEl
 function togglePeek(){if(!state||state.phase!=='playing'||rolling()||busy)return;peeked=!peeked;refreshCups();}
 $('create').onclick=()=>enter(true);$('join').onclick=()=>enter(false);$('ready').onclick=()=>action({type:'ready'});$('open').onclick=()=>action({type:'open'});$('peek').onclick=togglePeek;$('my-cup').onclick=togglePeek;
 $('leave').onclick=()=>{if(!confirm('离开后好友仍留在原房间。确定离开？'))return;session=null;state=null;stopped=true;peeked=false;try{localStorage.removeItem('dice-session');}catch{}$('game').hidden=true;$('lobby').hidden=false;note('已离开。重新对战请创建新房间。');};$('copy').onclick=async()=>{try{await navigator.clipboard.writeText(session.code);note('房间码已复制：'+session.code);}catch{note('请手动记下房间码：'+session.code);}};$('rules').onclick=()=>$('rules-dialog').showModal();$('close-rules').onclick=()=>$('rules-dialog').close();
-async function poll(){if(polling||busy||!session||stopped||document.hidden)return;polling=true;const s=session;try{const v=await api('/api/state?code='+encodeURIComponent(s.code),null,s.token);if(session===s){accept(v);note('');}}catch(e){if(session===s){if(e.expired||e.status===403||e.status===401){stopped=true;session=null;state=null;try{localStorage.removeItem('dice-session');}catch{}$('game').hidden=true;$('lobby').hidden=false;note(e.message+'，请重新创建或加入。');}else{note('正在重连，请保持游戏在前台…');if(state&&Date.now()-lastOk>5000)$('connection').textContent='网络中断 · 重连中';}}}finally{polling=false;}}
-document.addEventListener('visibilitychange',()=>{if(document.hidden){peeked=false;refreshCups();}else poll();});setInterval(poll,900);setInterval(refreshCups,100);if(session){$('lobby').hidden=true;note('正在恢复房间，首次连接可能需要约1分钟…');poll();setTimeout(()=>{if(!state)$('lobby').hidden=false;},1500);}
+async function poll(){if(isLive()||polling||busy||!session||stopped||document.hidden)return;polling=true;const s=session;try{const v=await api('/api/state?code='+encodeURIComponent(s.code),null,s.token);if(session===s){accept(v);note('');}}catch(e){if(session===s){if(e.expired||e.status===403||e.status===401){stopped=true;session=null;state=null;try{localStorage.removeItem('dice-session');}catch{}$('game').hidden=true;$('lobby').hidden=false;note(e.message+'，请重新创建或加入。');}else{note('正在重连，请保持游戏在前台…');if(state&&Date.now()-lastOk>5000)$('connection').textContent='网络中断 · 重连中';}}}finally{polling=false;}}
+document.addEventListener('visibilitychange',()=>{if(document.hidden){peeked=false;refreshCups();}else poll();});setInterval(poll,900);if(session){$('lobby').hidden=true;note('正在恢复房间，首次连接可能需要约1分钟…');poll();setTimeout(()=>{if(!state)$('lobby').hidden=false;},1500);}
