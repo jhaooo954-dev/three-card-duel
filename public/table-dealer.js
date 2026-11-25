@@ -20,17 +20,44 @@
  const status = panel.querySelector('[role="status"]');
  const motionSetting = window.matchMedia('(prefers-reduced-motion: reduce)');
  const reduced = () => motionSetting.matches || document.body.classList.contains('low-motion');
- const step = 240, release = 144, flightDuration = 340;
+ const step = round ? 560 : 730;
+ const release = Math.round(step * .62);
+ const flightDuration = 460;
+ const shuffleDuration = 1500;
  const handX = {1: .13, 2: .50, 3: .77};
  const sheet = new Image();
  let sheetReady = false;
  sheet.onload = () => { sheetReady = true; };
- sheet.src = '/club/dealer-motion.webp?v=410';
+ sheet.src = '/club/dealer-motion-smooth.webp?v=420';
 
  let lastId = 0, animationFrame = 0, flights = [], hidden = [];
 
  function pose(row, strength) {
-  figure.style.backgroundPosition = (Math.round(strength * 5) * 20) + '% ' + (row * 25) + '%';
+  const column = Math.round(strength * 12);
+  figure.style.backgroundPosition = (column * 100 / 12) + '% ' + (row * 25) + '%';
+ }
+
+ const ease = progress => .5 - .5 * Math.cos(Math.PI * progress);
+
+ function prepare(progress) {
+  if (progress < .53) {
+   const phase = progress / .53;
+   pose(4, phase < .39 ? ease(phase/.39) : phase < .63 ? 1 : ease((1-phase)/.37));
+  } else {
+   pose(0, Math.sin(Math.PI * (progress-.53)/.47));
+  }
+ }
+
+ function reach(side, progress) {
+  if (progress < .20) {
+   pose(0, .65 * Math.sin(Math.PI * progress/.20));
+  } else if (progress < .56) {
+   pose(side, ease((progress-.20)/.36));
+  } else if (progress < .72) {
+   pose(side, 1);
+  } else {
+   pose(side, 1-ease((progress-.72)/.28));
+  }
  }
 
  function clear() {
@@ -71,10 +98,11 @@
   node.style.height = target.height + 'px';
   document.body.append(node);
   const animation = node.animate([
-   {transform: `translate(${x}px,${y}px) rotate(-8deg) scale(.46)`},
-   {offset:.58,transform:`translate(${x+(target.left-x)*.72}px,${y+(target.top-y)*.68-8}px) rotate(4deg) scale(.82)`},
-   {transform:`translate(${target.left}px,${target.top}px) rotate(0) scale(1)`}
-  ], {duration:flightDuration, easing:'cubic-bezier(.25,.68,.3,1)',fill:'both'});
+   {transform: `translate(${x}px,${y}px) rotate(${side===1?-10:side===3?10:0}deg) scale(.44)`,boxShadow:'0 2px 4px #0004'},
+   {offset:.56,transform:`translate(${x+(target.left-x)*.65}px,${y+(target.top-y)*.58-12}px) rotate(${side===1?-5:side===3?5:0}deg) scale(.78)`,boxShadow:'0 8px 10px #0006'},
+   {offset:.93,transform:`translate(${target.left}px,${target.top-1}px) rotate(0) scale(1)`,boxShadow:'0 3px 4px #0005'},
+   {transform:`translate(${target.left}px,${target.top}px) rotate(0) scale(1)`,boxShadow:'0 1px 2px #0005'}
+  ], {duration:flightDuration, easing:'cubic-bezier(.32,.58,.36,1)',fill:'both'});
   animation.currentTime = elapsed;
   flights.push({node, animation});
   animation.onfinish = () => {
@@ -94,44 +122,50 @@
   panel.classList.add('dealer-active');
   const counts = event.recipients.reduce((all, seat) => (all[seat]++, all), [0, 0, 0]);
   const dealt = [0, 0, 0];
-  const shuffleEnd = event.shuffle ? 1000 : 0;
+  const shuffleEnd = event.shuffle ? shuffleDuration : 0;
+  // Use the event timestamp to catch up after network delay. The visual cadence is
+  // local, so game actions and the server's deal event format stay the same.
   const start = performance.now() - (event.duration - event.remaining);
+  const visualEnd = shuffleEnd + (event.recipients.length - 1) * step + Math.max(step, release + flightDuration);
   const items = event.recipients.map((seat, index) => {
    const cards = cardsAt(seat, you);
-   const target = cards?.children[cards.children.length - counts[seat] + dealt[seat]++];
+   const position = cards ? cards.children.length - counts[seat] + dealt[seat]++ : 0;
+   const target = cards?.children[position];
    const time = shuffleEnd + index * step + release;
    if (!target || start + time + flightDuration <= performance.now()) return null;
    target.classList.add('card-in-flight');
    hidden.push(target);
-   return {target, side:poseToward(cards), time, sent:false};
+   return {cards, position, target, side:poseToward(cards), time, sent:false};
   });
   let shuffling;
   function tick(now) {
    const elapsed = now - start;
-   if (elapsed >= event.duration || reduced()) { done(); return; }
+   if (elapsed >= visualEnd || reduced()) { done(); return; }
    const preparing = elapsed < shuffleEnd;
    if (preparing !== shuffling) {
     shuffling = preparing;
     status.textContent = shuffling ? '荷官正在备牌…' : '荷官正在发牌…';
    }
    if (preparing) {
-    const phase = elapsed / shuffleEnd;
-    pose(phase < .54 ? 4 : 0, Math.sin(Math.PI * (phase < .54 ? phase/.54 : (phase-.54)/.46)));
+    prepare(elapsed / shuffleEnd);
    } else {
     const index = Math.floor((elapsed-shuffleEnd) / step);
     const item = items[index], phase = elapsed-shuffleEnd-index*step;
-    if (item && phase < 48) pose(0, Math.sin(Math.PI * phase/48)*.36);
-    else if (item) {
-     const reach = phase <= release ? (phase-48)/(release-48) : (step-phase)/(step-release);
-     pose(item.side, .5-.5*Math.cos(Math.PI*reach));
-    } else pose(0, 0);
+    if (item) reach(item.side, phase / step);
+    else pose(0, 0);
    }
    for (const item of items) {
     if (!item || item.sent || elapsed < item.time) continue;
     item.sent = true;
     const age = elapsed-item.time;
-    if (age < flightDuration && item.target.isConnected) fly(item.target, item.side, age);
-    else item.target.classList.remove('card-in-flight');
+    // Looking at a card can replace its DOM node while other seats are still
+    // receiving theirs. A revealed card stays visible; a replacement back can land.
+    const card = item.cards.children[item.position];
+    if (age < flightDuration && card && (card === item.target || card.classList.contains('back'))) {
+     card.classList.add('card-in-flight');
+     hidden.push(card);
+     fly(card, item.side, age);
+    } else item.target.classList.remove('card-in-flight');
    }
    animationFrame = requestAnimationFrame(tick);
   }

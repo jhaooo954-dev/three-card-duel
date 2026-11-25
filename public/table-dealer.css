@@ -1,6 +1,6 @@
 .dealer-portrait {
  position:absolute; left:50%; top:0; height:100%; aspect-ratio:1; transform:translateX(-50%);
- background:url('/club/dealer-motion.webp?v=410') 0 0 / 600% 500% no-repeat;
+ background:url('/club/dealer-motion-smooth.webp?v=420') 0 0 / 1300% 500% no-repeat;
  pointer-events:none;
 }
 .table-dealer {
