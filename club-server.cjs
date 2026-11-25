@@ -35,7 +35,7 @@ assets.set('/club-game/landlord/rules.js','club-games/landlord/rules.js');
 assets.set('/club-game/card/icon.svg','club-games/card/icon.svg');
 assets.set('/club-game/card/dealer.webp','club-games/card/dealer.webp');
 assets.set('/club/live.js','club/live.js');
-for(const name of ['practice.js','table-fit.css','table-record.js','dealer-hand-1.webp','dealer-hand-2.webp','dealer-hand-3.webp','dealer-hand-4.webp','music-card.mp3','music-dice.mp3','music-tenhalf.mp3'])assets.set('/club/'+name,'club/'+name);
+for(const name of ['practice.js','table-fit.css','table-record.js','dealer-motion.webp','hall-icon.svg','dealer-hand-1.webp','dealer-hand-2.webp','dealer-hand-3.webp','dealer-hand-4.webp','music-card.mp3','music-dice.mp3','music-tenhalf.mp3'])assets.set('/club/'+name,'club/'+name);
 assets.set('/club/deluxe.css','club/deluxe.css');assets.set('/club/preferences.js','club/preferences.js');
 assets.set('/club/table-dealer.js','table-dealer.js');assets.set('/club/table-dealer.css','table-dealer.css');
 async function handleClub(req,res){const url=new URL(req.url,'http://localhost');if(assets.has(url.pathname)){const file=assets.get(url.pathname),target=path.join(__dirname,'public',file);headers(res,url.pathname.startsWith('/club-game/'));if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405);res.end();return true;}const ext=path.extname(file);serveAsset(req,res,target,{'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.webp':'image/webp','.mp3':'audio/mpeg'}[ext]);return true;}

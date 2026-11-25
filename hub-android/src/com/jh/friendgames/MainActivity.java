@@ -70,7 +70,8 @@ public class MainActivity extends Activity {
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setSupportZoom(false);
         settings.setTextZoom(100);
-        settings.setMediaPlaybackRequiresUserGesture(true);
+        // The game has its own music toggle, used by the bundled and trusted remote lobby.
+        settings.setMediaPlaybackRequiresUserGesture(false);
         web.setWebChromeClient(new WebChromeClient());
         web.setDownloadListener((url, agent, disposition, mime, size) -> openExternal(url));
         web.setWebViewClient(new WebViewClient() {
@@ -97,6 +98,8 @@ public class MainActivity extends Activity {
                 if (path.endsWith(".js")) mime = "application/javascript";
                 if (path.endsWith(".css")) mime = "text/css";
                 if (path.endsWith(".webp")) mime = "image/webp";
+                if (path.endsWith(".mp3")) mime = "audio/mpeg";
+                if (path.endsWith(".svg")) mime = "image/svg+xml";
                 if (path.endsWith(".flac")) mime = "audio/flac";
                 if (path.endsWith(".opus")) mime = "audio/ogg";
                 try {

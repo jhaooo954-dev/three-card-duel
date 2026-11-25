@@ -69,12 +69,12 @@ window.addEventListener?.('message',e=>{
 });
 function render(){document.body.classList.toggle('practice-room',solo);const inside=!!session&&!!room;
 $('copy').hidden=solo;$('share').hidden=solo;$('entry').hidden=inside;$('room-bar').hidden=!inside;$('lobby').hidden=!inside||!!room?.selected;$('play').hidden=!inside||!room?.selected;$('back').hidden=!inside||!room?.selected;document.body.classList.toggle('in-game',inside&&!!room?.selected);
-if(!inside){if(frameKey){$('game-frame').src='about:blank';frameKey='';if(typeof syncMusic==='function' && musicReady)syncMusic();}return;}
+if(!inside){if(frameKey){$('game-frame').src='about:blank';frameKey='';syncMusic();}return;}
 const count=room.playerCount||2,members=room.memberCount??(room.joined?2:1),others=room.names.map((_,i)=>i).filter(i=>i!==room.you&&room.online[i]);
 $('roomcode').textContent=room.code;$('connection').textContent=solo?'单人练习 · '+(count-1)+' 位机器人':room.joined?'已连接 · '+members+'人已入座 · '+others.length+'位好友在线':'已入座 '+members+' / '+count+' 人 · 等待好友';$('players').textContent=room.names.map((n,i)=>i<members?n:'等待好友').join(' / ');$('lobby-hint').textContent=solo?'选择游戏，机器人会和你一起换桌。':room.joined?'选一个游戏，全员一起进入；之后不用再输入房间码。':'把上面的房间码发给好友，等待'+count+'人到齐。';
 $('room-mode').value=String(count);$('room-mode').disabled=busy||room.you!==0||!room.canChangeMode||members>2;$('mode-hint').textContent=members>2?'三人已入座':room.canChangeMode?'开局前房主可选择双人或三人；三人模式需等三人到齐。':'本房间已开局，人数保持不变';
 for(const g of Object.keys(names)){$('pick-'+g).disabled=busy||!room.joined||(g==='landlord'&&count!==3);const info=room.games[g];$('summary-'+g).textContent=g==='landlord'&&count!==3?'请创建三人房间':info.round?'继续第 '+info.round+(g==='dice'?' 盅':' 局'):'进入游戏';}
-const key=room.selected?room.selected+':'+room.epoch:'';if(key!==frameKey){frameKey=key;$('game-frame').src=key?'/club-game/'+room.selected+'/?epoch='+room.epoch+(solo?'&practice=1':''):'about:blank';$('game-frame').title=room.selected?names[room.selected]:'游戏';if(typeof syncMusic==='function' && musicReady)syncMusic();}
+const key=room.selected?room.selected+':'+room.epoch:'';if(key!==frameKey){frameKey=key;$('game-frame').src=key?'/club-game/'+room.selected+'/?epoch='+room.epoch+(solo?'&practice=1':''):'about:blank';$('game-frame').title=room.selected?names[room.selected]:'游戏';syncMusic();}
 }
 function accept(v){
  if(room&&v.rev<room.rev)return;
@@ -88,7 +88,7 @@ async function enter(create){if(busy)return;
   if(!create)params.set('room',$('code').value.trim());
   location.href='https://ten-half-duel-jh.onrender.com/club/?'+params;return;
  }busy=true;$('create').disabled=$('join').disabled=true;note('正在连接，首次打开可能需要约1分钟…');const token=uid();try{const v=await api(create?'create':'join',{token,name:$('nickname').value,code:$('code').value.trim(),playerCount:Number($('player-count').value||2)});session={code:v.code,token};room=null;remember();accept(v);note('');}catch(e){note(e.message);}finally{busy=false;$('create').disabled=$('join').disabled=false;render();}}
-async function select(game){if(busy||!session||!room)return;busy=true;render();const s=session;try{const v=await api('select',{code:s.code,id:uid().slice(0,24),rev:room.rev,game},s.token);if(session===s){accept(v);note('');}}catch(e){if(session===s){if(e.state)accept(e.state);note(e.message);}}finally{busy=false;render();}}
+async function select(game){if(busy||!session||!room)return;if(game)syncMusic(game);busy=true;render();const s=session;try{const v=await api('select',{code:s.code,id:uid().slice(0,24),rev:room.rev,game},s.token);if(session===s){accept(v);note('');}}catch(e){if(session===s){if(e.state)accept(e.state);note(e.message);}}finally{busy=false;render();syncMusic();}}
 async function changeMode(){if(busy||!session||!room)return;busy=true;const count=Number($('room-mode').value),s=session;render();try{const v=await api('mode',{code:s.code,rev:room.rev,playerCount:count},s.token);if(session===s){accept(v);note('');}}catch(e){if(e.state)accept(e.state);note(e.message);}finally{busy=false;render();}}
 $('room-mode').onchange=changeMode;
 function forget(){stopLive();if(solo){solo=false;session=null;room=null;render();return;}session=null;room=null;remember();render();}
@@ -98,11 +98,14 @@ $('leave').onclick=async()=>{if(!session||!confirm(solo?'结束这次单人练�
 window.showClubLobby=()=>{if(room?.selected){select(null);return true;}return false;};window.clubBack=window.showClubLobby;
 document.addEventListener('visibilitychange',()=>{if(document.hidden)stopLive();else{connectLive();poll();}});
 window.addEventListener?.('online',()=>{connectLive();poll();});
-window.addEventListener?.('offline',()=>{stopLive();if(room)$('connection').textContent='已断网 · 保留房间，联网后自动恢复';});setInterval(poll,900);render();if(session){note('正在恢复统一房间…');poll();}
+window.addEventListener?.('offline',()=>{stopLive();if(room)$('connection').textContent='已断网 · 保留房间，联网后自动恢复';});setInterval(poll,900);
 
 // Device-local presentation options never modify the room or its rules.
-let preferences={reduced:false,night:false,sound:false,music:false};
-try{Object.assign(preferences,JSON.parse(localStorage.getItem('club-preferences')||'{}'));}catch{}
+let preferences={reduced:false,night:false,sound:false,music:true};
+try {
+ const saved=JSON.parse(localStorage.getItem('club-preferences')||'{}');
+ Object.assign(preferences,saved,{music:saved.musicChosen ? !!saved.music : true});
+} catch {}
 function applyPreferences(){
  document.body.classList.toggle('low-motion',preferences.reduced);document.body.classList.toggle('night-theme',preferences.night);
  $('reduce-motion').checked=preferences.reduced;$('night-theme').checked=preferences.night;$('club-sound').checked=preferences.sound;$('club-music').checked=preferences.music;
@@ -110,20 +113,59 @@ function applyPreferences(){
  if(room?.selected)postToGame({type:'club-preferences',preferences});
 }
 $('preferences').onclick=()=>$('settings-dialog').showModal();$('close-settings').onclick=()=>$('settings-dialog').close();
-for(const [id,key] of [['reduce-motion','reduced'],['night-theme','night'],['club-sound','sound'],['club-music','music']])$(id).onchange=e=>{preferences[key]=e.target.checked;applyPreferences();syncMusic();};
-$('share').onclick=async()=>{if(!session)return;const text='来好友游戏厅玩一局，房间码 '+session.code;const url=location.origin+'/club/?room='+session.code;try{if(navigator.share)await navigator.share({title:'好友游戏厅 ROYALE',text,url});else{await navigator.clipboard.writeText(text+'\n'+url);note('邀请已复制，发给好友即可');}}catch(e){if(e.name!=='AbortError')note('房间码 '+session.code+'，发给好友即可');}};
-$('latency-test').onclick=async()=>{const b=$('latency-test');b.disabled=true;$('latency-result').textContent='正在检测当前服务…';const times=[];try{for(let i=0;i<3;i++){const t=performance.now();const r=await fetch('/health',{cache:'no-store',signal:AbortSignal.timeout(8000)});if(!r.ok)throw Error('服务暂不可用');await r.json();times.push(Math.round(performance.now()-t));}const sorted=[...times].sort((a,b)=>a-b);$('latency-result').textContent='中位 '+sorted[1]+' ms · '+times.join(' / ')+' ms';}catch(e){$('latency-result').textContent='检测未完成，请检查网络或稍后重试';}finally{b.disabled=false;}};
-var musicReady=true;
-function syncMusic(){
- const player=$('room-music');
- if(!player?.pause)return;
- const game=room?.selected;
- if(!preferences.music || document.hidden || !['card','dice','tenhalf'].includes(game)){player.pause();return;}
- const source='/club/music-'+game+(standaloneAndroid?'.flac':'.mp3');
- if(player.getAttribute('src')!==source){player.src=source;player.volume=.26;}
- player.play().catch(()=>{});
+for(const [id,key] of [['reduce-motion','reduced'],['night-theme','night'],['club-sound','sound']]) {
+ $(id).onchange=e=>{preferences[key]=e.target.checked;applyPreferences();};
 }
-document.addEventListener('visibilitychange',syncMusic);
+function setMusic(enabled){
+ preferences.music=enabled;
+ preferences.musicChosen=true;
+ applyPreferences();
+ syncMusic();
+}
+$('club-music').onchange=e=>setMusic(e.target.checked);
+$('music-toggle').onclick=()=>setMusic(!preferences.music||musicNeedsTap);
+$('share').onclick=async()=>{if(!session)return;const text='来游戏厅玩一局，房间码 '+session.code;const url=location.origin+'/club/?room='+session.code;try{if(navigator.share)await navigator.share({title:'游戏厅',text,url});else{await navigator.clipboard.writeText(text+'\n'+url);note('邀请已复制，发给好友即可');}}catch(e){if(e.name!=='AbortError')note('房间码 '+session.code+'，发给好友即可');}};
+$('latency-test').onclick=async()=>{const b=$('latency-test');b.disabled=true;$('latency-result').textContent='正在检测当前服务…';const times=[];try{for(let i=0;i<3;i++){const t=performance.now();const r=await fetch('/health',{cache:'no-store',signal:AbortSignal.timeout(8000)});if(!r.ok)throw Error('服务暂不可用');await r.json();times.push(Math.round(performance.now()-t));}const sorted=[...times].sort((a,b)=>a-b);$('latency-result').textContent='中位 '+sorted[1]+' ms · '+times.join(' / ')+' ms';}catch(e){$('latency-result').textContent='检测未完成，请检查网络或稍后重试';}finally{b.disabled=false;}};
+const musicPlayer=$('room-music');
+const musicGames=new Set(['card','dice','tenhalf']);
+const musicButton=$('music-toggle');
+let musicTrack=null,musicNeedsTap=false,musicAttempt=0;
+function musicStatus(text,retry=false){
+ musicNeedsTap=retry;
+ $('music-status').textContent=text;
+ musicButton.textContent=retry?'♫!':preferences.music?'♫':'♫̸';
+ musicButton.title=retry?'点击播放音乐':preferences.music?'关闭牌桌音乐':'开启牌桌音乐';
+ musicButton.setAttribute('aria-label',musicButton.title);
+ musicButton.setAttribute('aria-pressed',String(preferences.music));
+}
+function syncMusic(game=room?.selected){
+ if(!preferences.music||document.hidden||!musicGames.has(game)){
+  musicAttempt++;
+  musicPlayer.pause();
+  musicStatus(preferences.music?'开启后进入牌桌时播放':'音乐已关闭');
+  return;
+ }
+ if(musicTrack!==game){
+  musicTrack=game;
+  musicPlayer.src='/club/music-'+game+(standaloneAndroid?'.flac':'.mp3');
+  musicPlayer.volume=.35;
+ }
+ if(musicPlayer.error)musicPlayer.load();
+ const attempt=++musicAttempt;
+ musicPlayer.play().then(()=>{
+  if(attempt===musicAttempt)musicStatus('当前配乐正在播放');
+ }).catch(error=>{
+  if(attempt!==musicAttempt||error.name==='AbortError')return;
+  musicStatus(error.name==='NotAllowedError'?'点击顶部音乐按钮开始播放':'配乐暂时无法播放，点击顶部按钮重试',true);
+ });
+}
+musicPlayer.addEventListener('error',()=>{
+ if(standaloneAndroid&&musicPlayer.getAttribute('src')?.endsWith('.flac')){
+  musicPlayer.src='/club/music-'+musicTrack+'.mp3';
+  syncMusic(musicTrack);
+ }
+});
+document.addEventListener('visibilitychange',()=>syncMusic());
 $('practice').onclick=()=>{$('practice-choices').hidden=!$('practice-choices').hidden;};
 document.querySelectorAll?.('[data-practice]').forEach(button=>button.onclick=async()=>{
  if(busy)return;
@@ -135,6 +177,9 @@ document.querySelectorAll?.('[data-practice]').forEach(button=>button.onclick=as
 });
 if(standaloneAndroid)document.body.classList.add('native-offline');
 applyPreferences();
+syncMusic();
+render();
+if(session){note('正在恢复统一房间…');poll();}
 if(typeof URLSearchParams!=='undefined'&&typeof location!=='undefined'){const invite=new URLSearchParams(location.search).get('room');if(invite&&/^\d{6}$/.test(invite))$('code').value=invite;
  const params=new URLSearchParams(location.search);
  if(!standaloneAndroid&&params.has('mode')&&!session){

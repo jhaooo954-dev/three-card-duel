@@ -30,21 +30,7 @@ main:has(> #game.three-player) > header button { padding: 8px 12px; }
 
 .three-player .table-top { padding-inline: 4px; }
 
-.three-player .table-dealer {
-  height: 75px;
-  min-height: 0;
-  border-radius: 11px;
-  background: radial-gradient(ellipse at 19% 30%, #473339, #172326 75%);
-}
 
-.three-player .td-avatar {
-  inset: 0 auto 0 0;
-  width: 82px;
-  height: 100%;
-  transform: none;
-}
-
-.three-player .td-avatar img { object-fit: cover; object-position: center top; }
 
 .three-player .td-copy {
   inset: 0 48px 0 83px;
@@ -180,7 +166,6 @@ main:has(> #game.three-player) > header button { padding: 8px 12px; }
 @media (max-height: 520px) {
   .three-player .table { row-gap: 5px; padding-block: 6px; }
   .three-player #hint { display: none; }
-  .three-player .table-dealer { height: 55px; }
   .three-player .td-shoe { top: 6px; }
   .three-player .ten-seat { padding-block: 5px 4px; }
   .three-player .cards { min-height: 32px; }
@@ -193,8 +178,6 @@ main:has(> #game.three-player) > header button { padding: 8px 12px; }
   .three-player .odds { margin-top: 4px; padding-top: 4px; }
   .three-player:has(#result:not([hidden])) .odds { display: none; }
 
-  .three-player .table:has(#result:not([hidden])) .table-dealer { height: 29px; }
-  .three-player .table:has(#result:not([hidden])) .td-avatar { width: 41px; }
   .three-player .table:has(#result:not([hidden])) .td-copy {
     left: 43px;
     flex-direction: row;
