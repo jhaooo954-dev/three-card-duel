@@ -6,7 +6,7 @@ const uid=()=>Array.from(crypto.getRandomValues(new Uint8Array(32)),v=>v.toStrin
 const names={card:'炸金花',dice:'大话骰',tenhalf:'十点半',gomoku:'五子棋',landlord:'不洗牌斗地主'};
 function note(s){$('notice').textContent=s||'';}
 function remember(){try{if(session)localStorage.setItem('club-session',JSON.stringify(session));else localStorage.removeItem('club-session');localStorage.setItem('club-name',$('nickname').value.trim());}catch{}}
-async function api(path,body,token){const c=new AbortController(),timer=setTimeout(()=>c.abort(),65000);try{const r=await fetch('/club-api/'+path,{method:body?'POST':'GET',headers:{...(body?{'Content-Type':'application/json'}:{}),...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:c.signal,cache:'no-store'});const data=await r.json();if(!r.ok){const e=Error(data.error||'请求失败');Object.assign(e,{status:r.status,state:data.state,expired:data.expired});throw e;}lastOk=Date.now();return data;}catch(e){if(e.name==='AbortError')throw Error('连接超时，请重试');throw e;}finally{clearTimeout(timer);}}
+async function api(path,body,token){const c=new AbortController(),timer=setTimeout(()=>c.abort(),/^(create|join)$/.test(path)?65000:8000);try{const r=await fetch('/club-api/'+path,{method:body?'POST':'GET',headers:{...(body?{'Content-Type':'application/json'}:{}),...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:c.signal,cache:'no-store'});const data=await r.json();if(!r.ok){const e=Error(data.error||'请求失败');Object.assign(e,{status:r.status,state:data.state,expired:data.expired});throw e;}lastOk=Date.now();return data;}catch(e){if(e.name==='AbortError')throw Error('连接超时，请重试');throw e;}finally{clearTimeout(timer);}}
 let liveAbort=null,liveSession=null,liveRetry=null,liveTimeout=null,liveConnected=false,liveGame=null;
 function frameMatches(game){return game?.game&&room?.code===game.code&&room.selected===game.game&&room.epoch===game.epoch;}
 function postToGame(message){$('game-frame').contentWindow?.postMessage(message,location.origin);}
@@ -26,10 +26,11 @@ function stopLive(){
  clearTimeout(liveRetry);clearTimeout(liveTimeout);
 }
 async function connectLive(){
+ if(document.hidden)return;
  if(typeof TextDecoder==='undefined'||typeof ReadableStream==='undefined'||!session||liveSession===session)return;
  clearTimeout(liveRetry);
  const saved=session,controller=new AbortController();liveSession=saved;liveAbort=controller;
- function watchStream(){clearTimeout(liveTimeout);liveTimeout=setTimeout(()=>controller.abort(),9000);}
+ function watchStream(){clearTimeout(liveTimeout);liveTimeout=setTimeout(()=>controller.abort(),20000);}
  watchStream();
  try{
   const response=await fetch('/club-api/events?code='+encodeURIComponent(saved.code),{headers:{Authorization:'Bearer '+saved.token},signal:controller.signal,cache:'no-store'});
@@ -57,7 +58,7 @@ async function connectLive(){
  }catch{}finally{
   if(liveAbort===controller){
    clearTimeout(liveTimeout);liveSession=null;liveAbort=null;liveConnected=false;liveGame=null;
-   forwardStatus();liveRetry=setTimeout(connectLive,1200);
+   forwardStatus();if(!document.hidden)liveRetry=setTimeout(connectLive,1200);
   }
  }
 }
@@ -87,4 +88,22 @@ async function poll(){if(liveConnected)return;if(polling||busy||!session||docume
 $('create').onclick=()=>enter(true);$('join').onclick=()=>enter(false);for(const g of Object.keys(names))$('pick-'+g).onclick=()=>select(g);$('back').onclick=()=>select(null);$('copy').onclick=async()=>{try{await navigator.clipboard.writeText(session.code);note('统一房间码已复制：'+session.code);}catch{note('统一房间码：'+session.code);}};
 $('leave').onclick=async()=>{if(!session||!confirm('退出会结束这个统一房间，好友也需要重新进房。确定退出？'))return;const s=session;try{await api('leave',{code:s.code},s.token);forget();note('已退出房间。');}catch(e){note(e.message);}};
 window.showClubLobby=()=>{if(room?.selected){select(null);return true;}return false;};window.clubBack=window.showClubLobby;
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});setInterval(poll,900);render();if(session){note('正在恢复统一房间…');poll();}
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stopLive();else{connectLive();poll();}});
+window.addEventListener?.('online',()=>{connectLive();poll();});
+window.addEventListener?.('offline',()=>{stopLive();if(room)$('connection').textContent='已断网 · 保留房间，联网后自动恢复';});setInterval(poll,900);render();if(session){note('正在恢复统一房间…');poll();}
+
+// Device-local presentation options never modify the room or its rules.
+let preferences={reduced:false,night:false,sound:false};
+try{Object.assign(preferences,JSON.parse(localStorage.getItem('club-preferences')||'{}'));}catch{}
+function applyPreferences(){
+ document.body.classList.toggle('low-motion',preferences.reduced);document.body.classList.toggle('night-theme',preferences.night);
+ $('reduce-motion').checked=preferences.reduced;$('night-theme').checked=preferences.night;$('club-sound').checked=preferences.sound;
+ try{localStorage.setItem('club-preferences',JSON.stringify(preferences));}catch{}
+ if(room?.selected)postToGame({type:'club-preferences',preferences});
+}
+$('preferences').onclick=()=>$('settings-dialog').showModal();$('close-settings').onclick=()=>$('settings-dialog').close();
+for(const [id,key] of [['reduce-motion','reduced'],['night-theme','night'],['club-sound','sound']])$(id).onchange=e=>{preferences[key]=e.target.checked;applyPreferences();};
+$('share').onclick=async()=>{if(!session)return;const text='来好友游戏厅玩一局，房间码 '+session.code;const url=location.origin+'/club/?room='+session.code;try{if(navigator.share)await navigator.share({title:'好友游戏厅 ROYALE',text,url});else{await navigator.clipboard.writeText(text+'\n'+url);note('邀请已复制，发给好友即可');}}catch(e){if(e.name!=='AbortError')note('房间码 '+session.code+'，发给好友即可');}};
+$('latency-test').onclick=async()=>{const b=$('latency-test');b.disabled=true;$('latency-result').textContent='正在检测当前服务…';const times=[];try{for(let i=0;i<3;i++){const t=performance.now();const r=await fetch('/health',{cache:'no-store',signal:AbortSignal.timeout(8000)});if(!r.ok)throw Error('服务暂不可用');await r.json();times.push(Math.round(performance.now()-t));}const sorted=[...times].sort((a,b)=>a-b);$('latency-result').textContent='中位 '+sorted[1]+' ms · '+times.join(' / ')+' ms';}catch(e){$('latency-result').textContent='检测未完成，请检查网络或稍后重试';}finally{b.disabled=false;}};
+applyPreferences();
+if(typeof URLSearchParams!=='undefined'&&typeof location!=='undefined'){const invite=new URLSearchParams(location.search).get('room');if(invite&&/^\d{6}$/.test(invite))$('code').value=invite;}

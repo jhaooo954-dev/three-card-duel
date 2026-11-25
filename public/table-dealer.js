@@ -10,6 +10,7 @@
  anchor.after(panel);
  const status=panel.querySelector('.td-status');let lastId=0,timer=null,flightTimer=null,locked=false,previousFocus=null,flights=[];
  const motion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+ const reducedMotion=()=>motion||document.body.classList.contains('low-motion');
  function finish(){for(const n of flights)n.remove();flights=[];clearTimeout(timer);clearTimeout(flightTimer);panel.classList.remove('td-shuffling','td-dealing','td-to-self','td-to-other');document.body.classList.remove('td-running');locked=false;status.textContent='发牌完成 · 祝双方好运';if(previousFocus?.isConnected)previousFocus.focus({preventScroll:true});previousFocus=null;}
  function update(event,you){
   if(!event||event.id<=lastId)return;lastId=event.id;
@@ -23,7 +24,7 @@
    flightTimer=setTimeout(animate,80);
   }
   const started=performance.now();
-  if(!motion){
+  if(!reducedMotion()){
    const counts=event.recipients.reduce((a,i)=>(a[i]++,a),[0,0,0]),sent=[0,0,0];
    event.recipients.forEach((recipient,j)=>{
     const el=document.getElementById(recipient===you?'my-cards':document.querySelector('[data-ten-seat="'+recipient+'"]')?.id||'op-cards');
@@ -34,7 +35,7 @@
     requestAnimationFrame(()=>{const k=(el?.children.length||0)-counts[recipient]+offset;const target=el?.children[k];if(!target)return n.remove();const from=panel.querySelector('.td-shoe').getBoundingClientRect(),to=target.getBoundingClientRect();n.style.width=to.width+'px';n.style.height=to.height+'px';const a=n.animate([{transform:`translate(${from.left}px,${from.top}px) rotate(-12deg) scale(.65)`,opacity:1},{transform:`translate(${to.left}px,${to.top}px) rotate(0) scale(1)`,opacity:1}],{duration:340,delay:Math.max(0,delay),easing:'ease-out',fill:'both'});if(delay<0)a.currentTime=-delay;a.onfinish=()=>n.remove();});
    });
   }
-  if(motion){status.textContent=event.shuffle?'荷官洗牌、发牌中…':'荷官发牌中…';}else animate();
+  if(reducedMotion()){status.textContent=event.shuffle?'荷官洗牌、发牌中…':'荷官发牌中…';}else animate();
   timer=setTimeout(finish,event.remaining);
  }
  // Presentation never intercepts gameplay clicks; the server validates every action.
@@ -42,7 +43,8 @@
 function roundDealer(){
  const arena=document.querySelector('.arena'),panel=document.createElement('section');panel.className='casino-dealer';panel.setAttribute('aria-label','荷官席');
  panel.innerHTML='<div class="dealer-figure"><img src="/club-game/card/dealer.webp" alt="身着酒红马甲的专业虚拟荷官" width="640" height="680" fetchpriority="high" draggable="false"></div><div class="dealer-name">荷官 <span>DEALER</span></div><div class="casino-shoe" aria-hidden="true"><i></i><i></i><i></i><b>♠</b></div><div class="casino-tray" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div><span class="casino-status" role="status" aria-live="polite">双方独立入座 · 等待发牌</span>';
- arena.append(panel);const status=panel.querySelector('.casino-status'),reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+ arena.append(panel);const status=panel.querySelector('.casino-status'),reducedPreference=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+ const reduced=()=>reducedPreference||document.body.classList.contains('low-motion');
  let lastId=0,raf=0,animations=[],flights=[],marks=[],viewer=0;
  function cancel(){cancelAnimationFrame(raf);animations.forEach(a=>a.cancel());animations=[];flights.forEach(n=>n.remove());flights=[];marks.forEach(n=>n.classList.remove('card-in-flight'));marks=[];panel.classList.remove('is-shuffling','is-dealing');}
  function finish(){marks.forEach(n=>n.classList.remove('card-in-flight'));marks=[];panel.classList.remove('is-shuffling','is-dealing');status.textContent='发牌完成 · 请按回合操作';}
@@ -57,7 +59,7 @@ function roundDealer(){
  }
  function update(e,you){
   if(!e||e.id<=lastId)return;lastId=e.id;cancel();if(e.remaining<=0)return;viewer=you;const eventStart=performance.now()-(e.duration-e.remaining),sent=new Set(),shuffleEnd=e.shuffle?1000:0;let wasShuffling;
-  if(reduced){status.textContent='荷官发牌完成 · 请按回合操作';return;}
+  if(reduced()){status.textContent='荷官发牌完成 · 请按回合操作';return;}
   // Hide only undealt cards. Gameplay buttons remain responsive throughout.
   for(const id of ['cards0','cards1','cards2'].filter(id=>document.getElementById(id)))for(const n of document.getElementById(id).children){n.classList.add('card-in-flight');marks.push(n);}
   function tick(){const t=performance.now()-eventStart;
@@ -72,7 +74,7 @@ function roundDealer(){
   }
   raf=requestAnimationFrame(tick);
  }
- function chip(slot,amount,collect=false){if(reduced)return;const target=document.querySelector('#player'+slot+' .balance'),pot=document.querySelector('.center-pot .chips');if(!target||!pot)return;const r=arena.getBoundingClientRect(),a=(collect?pot:target).getBoundingClientRect(),b=(collect?target:pot).getBoundingClientRect();for(let j=0;j<3;j++){const n=document.createElement('i');n.className='casino-chip';n.textContent=amount||'♠';n.setAttribute('aria-hidden','true');arena.append(n);const x=a.left+a.width/2-r.left,y=a.top+a.height/2-r.top,dx=b.left+b.width/2-r.left,dy=b.top+b.height/2-r.top;const anim=n.animate([{transform:`translate(${x}px,${y}px) rotate(0)`,opacity:1},{offset:.65,transform:`translate(${x+(dx-x)*.7}px,${y+(dy-y)*.7-25}px) rotate(170deg)`,opacity:1},{transform:`translate(${dx+j*6}px,${dy-j*3}px) rotate(250deg)`,opacity:0}],{duration:460,delay:j*55,easing:'ease-out',fill:'both'});anim.onfinish=()=>n.remove();}}
+ function chip(slot,amount,collect=false){if(reduced())return;const target=document.querySelector('#player'+slot+' .balance'),pot=document.querySelector('.center-pot .chips');if(!target||!pot)return;const r=arena.getBoundingClientRect(),a=(collect?pot:target).getBoundingClientRect(),b=(collect?target:pot).getBoundingClientRect();for(let j=0;j<3;j++){const n=document.createElement('i');n.className='casino-chip';n.textContent=amount||'♠';n.setAttribute('aria-hidden','true');arena.append(n);const x=a.left+a.width/2-r.left,y=a.top+a.height/2-r.top,dx=b.left+b.width/2-r.left,dy=b.top+b.height/2-r.top;const anim=n.animate([{transform:`translate(${x}px,${y}px) rotate(0)`,opacity:1},{offset:.65,transform:`translate(${x+(dx-x)*.7}px,${y+(dy-y)*.7-25}px) rotate(170deg)`,opacity:1},{transform:`translate(${dx+j*6}px,${dy-j*3}px) rotate(250deg)`,opacity:0}],{duration:460,delay:j*55,easing:'ease-out',fill:'both'});anim.onfinish=()=>n.remove();}}
  window.TableDealer={update,bet:(s,n)=>chip(s,n),collect:s=>chip(s,0,true)};
 }
 })();

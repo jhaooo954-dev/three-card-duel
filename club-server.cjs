@@ -1,5 +1,6 @@
 'use strict';
 const crypto=require('node:crypto'),fs=require('node:fs'),path=require('node:path');
+const {serveAsset}=require('./club-assets.cjs');
 const card=require('./club-engines/card.cjs'),dice=require('./club-engines/dice.cjs'),tenhalf=require('./engine.cjs'),gomoku=require('./club-engines/gomoku.cjs'),tenhalf3=require('./club-engines/tenhalf3.cjs');
 const landlord=require('./club-engines/landlord.cjs');
 const tenEngine=r=>r.tokens.length===3?tenhalf3:tenhalf;
@@ -34,8 +35,9 @@ assets.set('/club-game/landlord/rules.js','club-games/landlord/rules.js');
 assets.set('/club-game/card/icon.svg','club-games/card/icon.svg');
 assets.set('/club-game/card/dealer.webp','club-games/card/dealer.webp');
 assets.set('/club/live.js','club/live.js');
+assets.set('/club/deluxe.css','club/deluxe.css');assets.set('/club/preferences.js','club/preferences.js');
 assets.set('/club/table-dealer.js','table-dealer.js');assets.set('/club/table-dealer.css','table-dealer.css');
-async function handleClub(req,res){const url=new URL(req.url,'http://localhost');if(assets.has(url.pathname)){const file=assets.get(url.pathname),target=path.join(__dirname,'public',file);headers(res,url.pathname.startsWith('/club-game/'));if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405);res.end();return true;}const bytes=fs.readFileSync(target),ext=path.extname(file);res.setHeader('Content-Type',{'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.webp':'image/webp'}[ext]);res.setHeader('Content-Length',bytes.length);res.end(req.method==='HEAD'?undefined:bytes);return true;}
+async function handleClub(req,res){const url=new URL(req.url,'http://localhost');if(assets.has(url.pathname)){const file=assets.get(url.pathname),target=path.join(__dirname,'public',file);headers(res,url.pathname.startsWith('/club-game/'));if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405);res.end();return true;}const ext=path.extname(file);serveAsset(req,res,target,{'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.webp':'image/webp'}[ext]);return true;}
 if(!url.pathname.startsWith('/club-api/'))return false;
 function send(status,data){headers(res,false);res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(data));}
 try{let b={};if(req.method==='POST'){const origin=req.headers.origin;if(origin&&new URL(origin).host!==req.headers.host){send(403,{error:'请求来源无效'});return true;}let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>8192){send(413,{error:'请求过大'});return true;}}try{b=JSON.parse(raw||'{}');}catch{send(400,{error:'请求格式错误'});return true;}}else if(req.method!=='GET'){send(405,{error:'方法不支持'});return true;}
