@@ -2,7 +2,7 @@
 const CLUB_EPOCH=Number(new URLSearchParams(location.search).get('epoch')||0);
 const $=id=>document.getElementById(id);
 let session=null,state=null,busy=false,polling=false,peeked=false,lastOk=0,stopped=false,rollEnds=0,rollTimer=null;
-try{session=JSON.parse(localStorage.getItem('club-session')||'null');$('nickname').value=localStorage.getItem('club-name')||'';}catch{}
+try{session=JSON.parse(localStorage.getItem(new URLSearchParams(location.search).get('practice')==='1'?'club-practice-session':'club-session')||'null');$('nickname').value=localStorage.getItem('club-name')||'';}catch{}
 const token=()=>Array.from(crypto.getRandomValues(new Uint8Array(32)),x=>x.toString(16).padStart(2,'0')).join('');
 function note(m){$('notice').textContent=m||'';}
 async function api(route,body,auth){if(route.startsWith('/api/state'))route=route.replace('/api/state','/club-api/game/dice/state');else if(route==='/api/action'){route='/club-api/game/dice/action';body.epoch=CLUB_EPOCH;}const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),8000);try{const r=await fetch(route,{method:body?'POST':'GET',headers:{...(body?{'Content-Type':'application/json'}:{}),...(auth?{Authorization:'Bearer '+auth}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:controller.signal,cache:'no-store'});const data=await r.json();if(!r.ok){const e=Error(data.error||'请求失败');e.status=r.status;e.state=data.state;e.expired=data.expired;throw e;}lastOk=Date.now();return data;}catch(e){if(e.name==='AbortError')throw Error('连接超时，请检查网络后重试');throw e;}finally{clearTimeout(timeout);}}

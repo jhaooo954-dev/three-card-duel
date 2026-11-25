@@ -1,6 +1,30 @@
 'use strict';
 // Presentation only: the server owns the deck and sends no private card values here.
 (()=>{
+ const poses=[1,2,3,4].map(n=>'/club/dealer-hand-'+n+'.webp');
+ const preloaded=poses.map(src=>{const image=new Image();image.src=src;return image;});
+ function attachArm(panel){
+  const arm=document.createElement('img');arm.className='dealer-arm';arm.alt='';arm.setAttribute('aria-hidden','true');panel.append(arm);
+  let sequence=0,animation;
+  const show=pose=>{arm.src=preloaded[pose].src;};
+  return (direction=0,shuffling=false)=>{
+   if(!arm.animate)return;
+   const id=++sequence;animation?.cancel();
+   const reach=direction<0?-32:direction>0?31:-10,rotation=direction*24;
+   arm.style.scale=direction>0?'-1 1':'1 1';
+   show(shuffling?0:1);arm.classList.add('dealer-arm-moving');
+   animation=arm.animate([
+    {transform:'translate(0,-3px) rotate(0deg) scale(.83)',opacity:0},
+    {offset:.22,transform:'translate(0,0) rotate(0deg) scale(.91)',opacity:1},
+    {offset:.57,transform:'translate('+reach+'px,9px) rotate('+rotation+'deg) scale(1.05)',opacity:1},
+    {offset:.76,transform:'translate('+reach+'px,10px) rotate('+rotation+'deg) scale(1.05)',opacity:1},
+    {transform:'translate(1px,-4px) rotate(0deg) scale(.85)',opacity:0}
+   ],{duration:shuffling?450:239,easing:'ease-in-out'});
+   setTimeout(()=>{if(sequence===id)show(shuffling?1:2);},shuffling?120:70);
+   setTimeout(()=>{if(sequence===id)show(shuffling?1:3);},shuffling?275:134);
+   animation.onfinish=()=>{if(sequence===id)arm.classList.remove('dealer-arm-moving');};
+  };
+ }
  if(document.body.classList.contains('casino-round')){roundDealer();return;}
  const panel=document.createElement('section');
  panel.className='table-dealer';
@@ -8,6 +32,7 @@
  panel.innerHTML=`<div class="td-avatar"><img src="/club-game/card/dealer.webp" alt="酒红马甲写实虚拟荷官" width="640" height="680" draggable="false"></div><div class="td-copy"><strong>荷官 <small>DEALER</small></strong><span class="td-status" role="status" aria-live="polite">同一副牌 · 等待发牌</span></div><div class="td-shoe" aria-hidden="true"><i></i><i></i><i></i><b>♠</b></div><div class="td-flight" aria-hidden="true">♠</div>`;
  const anchor=document.querySelector('.arena .table-top')||document.querySelector('.table .table-top');
  anchor.after(panel);
+ const moveArm=attachArm(panel);
  const status=panel.querySelector('.td-status');let lastId=0,timer=null,flightTimer=null,locked=false,previousFocus=null,flights=[];
  const motion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
  const reducedMotion=()=>motion||document.body.classList.contains('low-motion');
@@ -24,6 +49,7 @@
    flightTimer=setTimeout(animate,80);
   }
   const started=performance.now();
+  if(event.shuffle&&!reducedMotion())moveArm(0,true);
   if(!reducedMotion()){
    const counts=event.recipients.reduce((a,i)=>(a[i]++,a),[0,0,0]),sent=[0,0,0];
    event.recipients.forEach((recipient,j)=>{
@@ -31,6 +57,12 @@
     const offset=sent[recipient]++;
     const delay=shuffleEnd+j*240-elapsed;
     if(delay < -340)return;
+    setTimeout(()=>{
+     if(lastId===event.id&&!reducedMotion()){
+      const rect=panel.getBoundingClientRect(),destination=el?.getBoundingClientRect();
+      moveArm(destination?Math.sign(destination.left+destination.width/2-rect.left-rect.width/2):0);
+     }
+    },Math.max(0,delay));
     const n=document.createElement('i');n.className='td-real-flight';n.textContent='♠';n.setAttribute('aria-hidden','true');document.body.append(n);flights.push(n);
     requestAnimationFrame(()=>{const k=(el?.children.length||0)-counts[recipient]+offset;const target=el?.children[k];if(!target)return n.remove();const from=panel.querySelector('.td-shoe').getBoundingClientRect(),to=target.getBoundingClientRect();n.style.width=to.width+'px';n.style.height=to.height+'px';const a=n.animate([{transform:`translate(${from.left}px,${from.top}px) rotate(-12deg) scale(.65)`,opacity:1},{transform:`translate(${to.left}px,${to.top}px) rotate(0) scale(1)`,opacity:1}],{duration:340,delay:Math.max(0,delay),easing:'ease-out',fill:'both'});if(delay<0)a.currentTime=-delay;a.onfinish=()=>n.remove();});
    });
@@ -43,7 +75,7 @@
 function roundDealer(){
  const arena=document.querySelector('.arena'),panel=document.createElement('section');panel.className='casino-dealer';panel.setAttribute('aria-label','荷官席');
  panel.innerHTML='<div class="dealer-figure"><img src="/club-game/card/dealer.webp" alt="身着酒红马甲的专业虚拟荷官" width="640" height="680" fetchpriority="high" draggable="false"></div><div class="dealer-name">荷官 <span>DEALER</span></div><div class="casino-shoe" aria-hidden="true"><i></i><i></i><i></i><b>♠</b></div><div class="casino-tray" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div><span class="casino-status" role="status" aria-live="polite">双方独立入座 · 等待发牌</span>';
- arena.append(panel);const status=panel.querySelector('.casino-status'),reducedPreference=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+ arena.append(panel);const moveArm=attachArm(panel);const status=panel.querySelector('.casino-status'),reducedPreference=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
  const reduced=()=>reducedPreference||document.body.classList.contains('low-motion');
  let lastId=0,raf=0,animations=[],flights=[],marks=[],viewer=0;
  function cancel(){cancelAnimationFrame(raf);animations.forEach(a=>a.cancel());animations=[];flights.forEach(n=>n.remove());flights=[];marks.forEach(n=>n.classList.remove('card-in-flight'));marks=[];panel.classList.remove('is-shuffling','is-dealing');}
@@ -53,6 +85,7 @@ function roundDealer(){
   const target=cards?.children[k];if(!target)return;
   const rect=arena.getBoundingClientRect(),shoe=panel.querySelector('.casino-shoe').getBoundingClientRect(),to=target.getBoundingClientRect();
   target.classList.add('card-in-flight');marks.push(target);const n=document.createElement('i');n.className='casino-flight';n.textContent='♠';n.setAttribute('aria-hidden','true');n.style.width=to.width+'px';n.style.height=to.height+'px';arena.append(n);flights.push(n);
+  moveArm(Math.sign(to.left+to.width/2-rect.left-rect.width/2));
   const dx=to.left-rect.left,dy=to.top-rect.top,sx=shoe.left-rect.left,sy=shoe.top-rect.top;
   const a=n.animate([{transform:`translate(${sx}px,${sy}px) rotate(-8deg) scale(.56)`,opacity:1,filter:'drop-shadow(0 9px 4px #0006)'},{offset:.6,transform:`translate(${sx+(dx-sx)*.72}px,${sy+(dy-sy)*.68-14}px) rotate(${recipient===viewer?9:-9}deg) scale(.95)`,opacity:1},{transform:`translate(${dx}px,${dy}px) rotate(${k===0?-6:k===2?6:0}deg) scale(1)`,opacity:1,filter:'drop-shadow(0 2px 1px #0004)'}],{duration:360,easing:'cubic-bezier(.15,.65,.25,1)',fill:'both'});
   animations.push(a);a.currentTime=Math.max(0,at);a.onfinish=()=>{target.classList.remove('card-in-flight');n.remove();};
@@ -60,6 +93,7 @@ function roundDealer(){
  function update(e,you){
   if(!e||e.id<=lastId)return;lastId=e.id;cancel();if(e.remaining<=0)return;viewer=you;const eventStart=performance.now()-(e.duration-e.remaining),sent=new Set(),shuffleEnd=e.shuffle?1000:0;let wasShuffling;
   if(reduced()){status.textContent='荷官发牌完成 · 请按回合操作';return;}
+  if(e.shuffle)moveArm(0,true);
   // Hide only undealt cards. Gameplay buttons remain responsive throughout.
   for(const id of ['cards0','cards1','cards2'].filter(id=>document.getElementById(id)))for(const n of document.getElementById(id).children){n.classList.add('card-in-flight');marks.push(n);}
   function tick(){const t=performance.now()-eventStart;

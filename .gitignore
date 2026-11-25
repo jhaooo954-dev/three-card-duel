@@ -5,3 +5,6 @@ hub-android/build/
 *.log
 *.jks
 *.p12
+
+public/club/*.flac
+public/club/*.opus

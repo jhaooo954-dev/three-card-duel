@@ -1,1 +1,1 @@
-{"name":"friends-club-royale","version":"3.0.0","private":true,"scripts":{"dev":"node server.cjs","start":"node server.cjs","test":"node --test test.cjs club-test.cjs hub-test.cjs landlord-test.cjs deluxe-test.cjs"}}
+{"name":"friends-club-royale","version":"3.0.0","private":true,"scripts":{"dev":"node server.cjs","start":"node server.cjs","test":"node --test test.cjs club-test.cjs hub-test.cjs landlord-test.cjs deluxe-test.cjs practice-test.cjs"}}

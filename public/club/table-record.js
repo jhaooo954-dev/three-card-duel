@@ -1,0 +1,22 @@
+(() => {
+  const details = document.querySelector('.side-panel, .history');
+  const header = document.querySelector('main > header');
+  if (!details || !header) return;
+  const actions = document.createElement('div');
+  actions.className = 'table-record';
+  const existing = Array.from(header.children).slice(1);
+  const open = document.createElement('button');
+  open.textContent = '战绩';
+  actions.append(...existing, open);
+  header.append(actions);
+  const dialog = document.createElement('dialog');
+  dialog.className = 'table-record-dialog';
+  dialog.setAttribute('aria-label', '牌局动态和战绩');
+  const close = document.createElement('button');
+  close.textContent = '返回牌桌';
+  close.onclick = () => dialog.close();
+  if (details.tagName === 'DETAILS') details.open = true;
+  dialog.append(close, details);
+  document.body.append(dialog);
+  open.onclick = () => dialog.showModal();
+})();

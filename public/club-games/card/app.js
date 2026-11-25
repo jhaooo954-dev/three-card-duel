@@ -169,7 +169,7 @@ $('leaveRoom').addEventListener('click',()=>{if(!confirm('退出当前房间？�
 $('rulesBtn').addEventListener('click',()=>$('rules').showModal());document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>$(b.dataset.close).close()));$('sound').addEventListener('click',()=>{sound=!sound;$('soundMark').textContent=sound?'开':'关';tone();});
 const invite=new URLSearchParams(location.search).get('room');if(invite)$('roomCodeInput').value=invite.toUpperCase();
 try{
- const old=JSON.parse(localStorage.getItem('club-session'));
+ const old=JSON.parse(localStorage.getItem(new URLSearchParams(location.search).get('practice')==='1'?'club-practice-session':'club-session'));
  if(old?.token&&old.code&&(!invite||old.code===invite.toUpperCase())){session=old;beginPoll();}
 }catch{}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)void pollState();});

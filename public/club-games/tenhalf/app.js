@@ -2,14 +2,14 @@
 const CLUB_EPOCH=Number(new URLSearchParams(location.search).get('epoch')||0);
 const $=id=>document.getElementById(id);
 let session=null,state=null,busy=false,polling=false,stopped=false,lastOk=0;
-try{session=JSON.parse(localStorage.getItem('club-session')||'null');$('nickname').value=localStorage.getItem('club-name')||'';}catch{}
+try{session=JSON.parse(localStorage.getItem(new URLSearchParams(location.search).get('practice')==='1'?'club-practice-session':'club-session')||'null');$('nickname').value=localStorage.getItem('club-name')||'';}catch{}
 const token=()=>Array.from(crypto.getRandomValues(new Uint8Array(32)),x=>x.toString(16).padStart(2,'0')).join('');
 function note(m){$('notice').textContent=m||'';}
 function points(units){if(units===null)return '底牌保密';return units%2?(units-1)/2+'.5':String(units/2);}
 function handName(units,count){if(units>21)return '爆牌';if(count===5)return '五张未爆 ×3';if(units===21)return '十点半 ×2';return '普通牌';}
 async function api(route,body,auth){if(route.startsWith('/api/state'))route=route.replace('/api/state','/club-api/game/tenhalf/state');else if(route==='/api/action'){route='/club-api/game/tenhalf/action';body.epoch=CLUB_EPOCH;}const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);try{const r=await fetch(route,{method:body?'POST':'GET',headers:{...(body?{'Content-Type':'application/json'}:{}),...(auth?{Authorization:'Bearer '+auth}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:controller.signal,cache:'no-store'});const data=await r.json();if(!r.ok){const e=Error(data.error||'请求失败');e.status=r.status;e.state=data.state;e.expired=data.expired;throw e;}lastOk=Date.now();return data;}catch(e){if(e.name==='AbortError')throw Error('连接超时，请检查网络后重试');throw e;}finally{clearTimeout(timer);}}
 const isLive=window.watchClubGame('tenhalf',()=>session,accept);
-function accept(v){if(state&&v.rev<=state.rev){if(v.rev===state.rev&&state.online?.some((online,i)=>online!==v.online?.[i])){state=v;paint();}return;}state=v;window.TableDealer?.update(v.dealerEvent,v.you);paint();}
+function accept(v){if(state&&v.rev<=state.rev){if(v.rev===state.rev&&state.online?.some((online,i)=>online!==v.online?.[i])){state=v;paint();}return;}state=v;paint();window.TableDealer?.update(v.dealerEvent,v.you);}
 function save(){try{localStorage.setItem('tenhalf-session',JSON.stringify(session));localStorage.setItem('tenhalf-name',$('nickname').value.trim());}catch{}}
 async function enter(create){if(busy)return;busy=true;$('create').disabled=$('join').disabled=true;note('正在连接，首次唤醒服务器可能需要约1分钟…');const t=token();try{const v=await api(create?'/api/create':'/api/join',{token:t,code:$('code').value.trim(),name:$('nickname').value.trim()});session={code:v.code,token:t};state=null;stopped=false;save();accept(v);note('');}catch(e){note(e.message);}finally{busy=false;$('create').disabled=$('join').disabled=false;paint();}}
 async function action(type){if(busy||!state||!session)return;busy=true;paint();const s=session,round=state.round;try{const v=await api('/api/action',{code:s.code,id:token().slice(0,24),rev:state.rev,action:{type,round}},s.token);if(session===s){accept(v);note('');}}catch(e){if(session===s){if(e.state)accept(e.state);note(e.message);}}finally{busy=false;paint();}}
